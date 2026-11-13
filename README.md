@@ -7,6 +7,12 @@ Wege. Das Projekt ist ein Prototyp, kein autonomes KI-System.
 
 ![Status: lokaler Prototyp](https://img.shields.io/badge/status-lokaler%20Prototyp-87d4a9)
 
+**[Interaktive HTML-Vorschau öffnen](https://juri-halveth.github.io/console-only/)** ·
+Beispieldaten ohne Server, Anmeldung oder lokale Dateien. Die echte Ansicht
+deiner eigenen Belege startet mit `./garden live`. Die Vorschau wird aus
+`src/garden_live.html` und `src/garden_live.js` mit
+`python -B tools/build_preview.py` erzeugt.
+
 ## In drei Minuten ausprobieren
 
 Voraussetzung: Python 3 mit `python` im Pfad und Bash (unter Windows z. B.
