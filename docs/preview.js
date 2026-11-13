@@ -46,12 +46,14 @@
   svg.addEventListener('pointerdown', event => {
     drag = { x: event.clientX, y: event.clientY, left: camera.x, top: camera.y };
     moved = false;
-    svg.setPointerCapture(event.pointerId);
   });
   svg.addEventListener('pointermove', event => {
     if (!drag) return;
     const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
-    if (Math.abs(dx) + Math.abs(dy) > 5) moved = true;
+    if (!moved && Math.abs(dx) + Math.abs(dy) > 5) {
+      moved = true;
+      svg.setPointerCapture(event.pointerId);
+    }
     if (!moved) return;
     camera.x = drag.left - dx * camera.w / svg.clientWidth;
     camera.y = drag.top - dy * camera.h / svg.clientHeight;
