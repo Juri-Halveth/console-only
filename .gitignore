@@ -1,0 +1,5 @@
+.zero/
+inbox/*
+!inbox/.gitkeep
+__pycache__/
+*.pyc
