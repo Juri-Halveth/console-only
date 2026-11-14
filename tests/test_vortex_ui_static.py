@@ -1,4 +1,4 @@
-"""KORRIDOT 0.7 static regression guards; browser tests remain separate.
+"""KORRIDOT 0.8 static regression guards; browser tests remain separate.
 
 Deliberately preserves the older loopback test's exact polling bytes and the
 public builder's literal replacement points, rather than weakening the suite.
@@ -14,8 +14,8 @@ JS = (ROOT / 'src/garden_live.js').read_text(encoding='utf-8')
 
 class KorridotUIStaticTests(unittest.TestCase):
     def test_version_local_service_and_existing_loopback_contract(self):
-        self.assertIn('JAVASCRIPT WARTET · KORRIDOT 0.7', HTML)
-        self.assertIn('JAVASCRIPT AKTIV · KORRIDOT 0.7', JS)
+        self.assertIn('JAVASCRIPT WARTET · KORRIDOT 0.8', HTML)
+        self.assertIn('JAVASCRIPT AKTIV · KORRIDOT 0.8', JS)
         self.assertIn('<script src="/garden_live.js"></script>', HTML)
         self.assertIn("fetch('/state'", JS)
         self.assertIn('setInterval(poll,2000)', JS)  # existing 403/loopback test
@@ -52,7 +52,7 @@ class KorridotUIStaticTests(unittest.TestCase):
         self.assertIn('<canvas id="world" tabindex="0"', HTML)
         self.assertIn('function focusRow(', JS)
         self.assertIn("reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')", JS)
-        self.assertIn('let motion = !reducedMotion', JS)
+        self.assertIn('let motion = false', JS)
 
     def test_public_preview_builder_literally_compatible(self):
         for marker in ('<title>Console Zero · Raumzeit</title>', 'Console Zero / Experiment 02',
@@ -91,6 +91,21 @@ class KorridotUIStaticTests(unittest.TestCase):
         self.assertNotIn('frameCount%2',JS)
         self.assertIn('pointercancel',JS)
         self.assertIn('visibilitychange',JS)
+
+    def test_reverse_brake_and_manual_default(self):
+        self.assertIn('id="reverseHold"',HTML)
+        self.assertIn('id="brakeHold"',HTML)
+        self.assertIn("const releaseReverse=bindHold('reverseHold'",JS)
+        self.assertIn("const releaseBrake=bindHold('brakeHold'",JS)
+        self.assertIn("keys.has('s')",JS)
+        self.assertIn("keys.has('x')",JS)
+        self.assertIn('boost?-78:-55',JS)
+        self.assertIn('braking?14:reversing?11',JS)
+        self.assertIn('motion?12:0',JS)
+        self.assertIn('let motion = false',JS)
+        self.assertIn("window.addEventListener('blur'",JS)
+        self.assertIn('releaseReverse();releaseBrake();',JS)
+        self.assertIn('Shift+S: TURBO-Rückflug',HTML)
 
     def test_volumetric_stars_without_overlay_and_separate_data_claims(self):
         self.assertIn('const starCells = Array.from(',JS)

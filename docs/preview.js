@@ -15,7 +15,7 @@
   const heads = document.getElementById('heads');
   const coords = document.getElementById('coords');
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  document.getElementById('runtime').textContent = '● JAVASCRIPT AKTIV · KORRIDOT 0.7';
+  document.getElementById('runtime').textContent = '● JAVASCRIPT AKTIV · KORRIDOT 0.8';
   const CORE = 'navigation:singularity';
   const TAU = Math.PI * 2;
   const STEP = 20;
@@ -24,7 +24,8 @@
   let ordered = [];
   let selected = null;
   let auto = true;
-  let motion = !reducedMotion;
+  // Manual flight is the default. Auto-cruise is now opt-in, not invisible thrust.
+  let motion = false;
   let deformation = true;
   let cameraZ = 0;
   let targetZ = null;
@@ -44,6 +45,8 @@
   let frameCount = 0;
   // All input devices feed one continuously integrated flight state.
   let thrustHeld = false;
+  let reverseHeld = false;
+  let brakeHeld = false;
   let wheelImpulse = 0;
   let flightSpeed = 0;
   let shipX = 0, shipY = 0;
@@ -422,11 +425,41 @@
     slider.value=String(ordered.length); targetZ=null;drawScene();
   };
   function updateMotionButton() {
-    motionToggle.textContent=motion?'Ⅱ Flug stoppen':'▶ Flug starten';
+    motionToggle.textContent=motion?'Ⅱ Autopilot stoppen':'▶ Autopilot starten';
     motionToggle.setAttribute('aria-pressed',String(motion));
-    flightStatus.textContent=motion?'KORRIDOT · FLUG DURCH EINEN GEKRÜMMTEN 3D-RAUM':'KORRIDOT · KAMERA ANGEHALTEN';
+    flightStatus.textContent=motion?'KORRIDOT · AUTOPILOT AKTIV':'KORRIDOT · MANUELLER FLUG · KEIN DAUERSCHUB';
   }
   motionToggle.onclick=()=>{motion=!motion;targetZ=null;updateMotionButton();};
+  // Hold-to-fly surfaces work for touch, mouse, pen, and keyboard without
+  // generating synthetic garden events or relying on click-toggle state.
+  function bindHold(id, setHeld) {
+    const button=document.getElementById(id);
+    const change=down=>{setHeld(down);button.classList.toggle('held',down);
+      button.setAttribute('aria-pressed',String(down));
+      if(down)targetZ=null;
+    };
+    button.addEventListener('pointerdown',event=>{
+      if(event.button!==0)return;
+      event.preventDefault();change(true);
+      try{button.setPointerCapture(event.pointerId);}catch(_){}
+    });
+    const release=()=>change(false);
+    button.addEventListener('pointerup',release);
+    button.addEventListener('pointercancel',release);
+    button.addEventListener('lostpointercapture',release);
+    button.addEventListener('keydown',event=>{
+      if(event.key===' '||event.key==='Enter'){
+        event.preventDefault();if(!event.repeat)change(true);
+      }
+    });
+    button.addEventListener('keyup',event=>{
+      if(event.key===' '||event.key==='Enter'){event.preventDefault();release();}
+    });
+    button.addEventListener('blur',release);
+    return release;
+  }
+  const releaseReverse=bindHold('reverseHold',value=>{reverseHeld=value;});
+  const releaseBrake=bindHold('brakeHold',value=>{brakeHeld=value;});
   document.getElementById('zoomIn').onclick=()=>{lens=clamp(lens*1.15,.55,1.9);drawScene();};
   document.getElementById('zoomOut').onclick=()=>{lens=clamp(lens/1.15,.55,1.9);drawScene();};
   document.getElementById('home').onclick=()=>{
@@ -515,7 +548,7 @@
     // Wheel contributes a decaying velocity impulse instead of stepping cameraZ.
     wheelImpulse=clamp(wheelImpulse+Math.sign(event.deltaY)*7,-25,25);
   },{passive:false});
-  const allowed=new Set(['w','s','a','d','q','e','Shift','ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ','Home','Enter']);
+  const allowed=new Set(['w','s','a','d','q','e','x','Shift','ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ','Home','Enter']);
   canvas.addEventListener('keydown',event=>{
     const key=event.key.length===1&&event.key!==' '?event.key.toLowerCase():event.key;
     if(!allowed.has(key))return;
@@ -536,10 +569,14 @@
     keys.delete(key);
   });
   canvas.addEventListener('blur',()=>{keys.clear();thrustHeld=false;pointerStart=null;});
+  window.addEventListener('blur',()=>{
+    keys.clear();thrustHeld=false;pointerStart=null;releaseReverse();releaseBrake();
+  });
   window.addEventListener('resize',drawScene);
   document.addEventListener('visibilitychange',()=>{
     lastFrame=0;
-    if(document.hidden){thrustHeld=false;keys.clear();pointerStart=null;}
+    if(document.hidden){thrustHeld=false;keys.clear();pointerStart=null;
+      releaseReverse();releaseBrake();}
   });
   function animate(time) {
     const dt=lastFrame?clamp((time-lastFrame)/1000,0,.05):0;
@@ -554,11 +591,19 @@
     yawOffset+= (targetYaw-yawOffset)*damping;
     pitchOffset+=(targetPitch-pitchOffset)*damping;
     roll+=(clamp(-yawOffset*.32,-.25,.25)-roll)*damping;
-    const forward=keys.has('w')||keys.has('ArrowUp');
-    const reverse=keys.has('s')||keys.has('ArrowDown');
-    const throttle=thrustHeld||forward? (keys.has('Shift')?48:33):motion?12:0;
-    const wanted=reverse?-19:throttle;
-    flightSpeed+=(wanted-flightSpeed)*(1-Math.exp(-dt*(wanted?2.9:2.2)));
+    const forward=thrustHeld||keys.has('w');
+    const reverse=reverseHeld||keys.has('s');
+    const boost=keys.has('Shift');
+    const braking=brakeHeld||keys.has('x');
+    // Reverse wins over held forward thrust. Fast braking crosses 0 promptly.
+    // No auto-cruise after release unless the user explicitly enabled autopilot.
+    const wanted=braking?0:reverse?(boost?-78:-55):forward?(boost?53:36):motion?12:0;
+    const reversing=(flightSpeed>0&&wanted<0)||(flightSpeed<0&&wanted>0);
+    const response=braking?14:reversing?11:wanted?5.3:9;
+    flightSpeed+=(wanted-flightSpeed)*(1-Math.exp(-dt*response));
+    if(braking)wheelImpulse*=Math.exp(-dt*18);
+    if(braking&&Math.abs(flightSpeed)<.1){flightSpeed=0;wheelImpulse=0;}
+    if(forward||reverse||braking)targetZ=null;
     if(targetZ!==null){
       const diff=targetZ-cameraZ;
       if(Math.abs(diff)>.04) cameraZ+=diff*(1-Math.exp(-dt*5.5));
@@ -569,15 +614,17 @@
         cameraZ=0;shipX=shipY=shipVX=shipVY=0; // visual looping never creates log events
       }
       cameraZ=Math.max(0,cameraZ);
+      if(cameraZ===0 && flightSpeed<0) flightSpeed=0;
     }
     wheelImpulse*=Math.exp(-dt*4.7);
     if(Math.abs(wheelImpulse)<.02)wheelImpulse=0;
     const sidestep=(keys.has('d')?1:0)-(keys.has('a')?1:0);
     const lift=(keys.has('e')?1:0)-(keys.has('q')?1:0);
-    const sideways=Math.sin(yawOffset)*Math.max(0,flightSpeed)*.32+sidestep*13;
-    const upward=Math.sin(pitchOffset)*Math.max(0,flightSpeed)*.32+lift*13;
-    shipVX+=(sideways-shipVX)*(1-Math.exp(-dt*4));
-    shipVY+=(upward-shipVY)*(1-Math.exp(-dt*4));
+    const sideways=Math.sin(yawOffset)*flightSpeed*.32+sidestep*13;
+    const upward=Math.sin(pitchOffset)*flightSpeed*.32+lift*13;
+    const driftDamping=braking?15:5;
+    shipVX+=(sideways-shipVX)*(1-Math.exp(-dt*driftDamping));
+    shipVY+=(upward-shipVY)*(1-Math.exp(-dt*driftDamping));
     shipX=clamp(shipX+shipVX*dt,-7.2,7.2);
     shipY=clamp(shipY+shipVY*dt,-6,6);
     if(Math.abs(shipX)>=7.2)shipVX=0;
@@ -600,6 +647,7 @@
   // A read-only geometry probe for local reproducible interaction tests.
   window.__korridotProbe=Object.freeze({
     snapshot:()=>({z:cameraZ,x:shipX,y:shipY,speed:flightSpeed,thrust:thrustHeld,
+      reverse:reverseHeld,brake:brakeHeld,autopilot:motion,
       yaw:yawOffset,pitch:pitchOffset,fps,quality,
       targets:targets.map(({key,x,y,depth})=>({key,x,y,depth})),
       deformation,flight:motion,events:ordered.length,selected}),
