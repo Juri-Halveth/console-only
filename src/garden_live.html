@@ -6,71 +6,56 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Console Zero · Raumzeit</title>
 <style>
-:root{color-scheme:dark;font-family:Inter,system-ui,Segoe UI,sans-serif;background:#020913;color:#e6f9f4;--mint:#81f4d2;--muted:#8facb9;--panel:#071b29;--line:#23485a}
-*{box-sizing:border-box}
-body{margin:0;min-height:100vh;background:radial-gradient(ellipse 55% 33% at 49% 0%,#132d44 0%,transparent 85%),#020913}
-button,input{font:inherit}button{cursor:pointer;color:inherit;background:#0d293a;border:1px solid #315a6b;border-radius:11px;padding:10px 13px;touch-action:manipulation}
-button:hover,button:focus-visible{background:#194258;outline:2px solid #89ffdd;outline-offset:2px}
-a{color:#a8f9df}.shell{max-width:1900px;margin:0 auto;padding:22px clamp(14px,3vw,52px) 32px}
-.top{display:flex;justify-content:space-between;gap:18px;align-items:center;margin-bottom:18px;flex-wrap:wrap}
-.kicker,.micro{color:#81e2cd;font:11px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.16em;text-transform:uppercase}
-h1{font-size:clamp(32px,4.2vw,61px);letter-spacing:-.06em;margin:7px 0;line-height:1.06}
-.lead{color:#abc5d1;max-width:720px;margin:8px 0 0;font-size:14px;line-height:1.55}
-.telemetry{text-align:right;display:flex;align-items:flex-end;flex-direction:column;gap:9px}
-.status{border:1px solid #32685b;border-radius:25px;padding:8px 13px;color:#a7f8cf;background:#082319;font:11px ui-monospace,monospace;white-space:nowrap}
-.status.off{border-color:#774e54;background:#291b28;color:#ffb1ae}
-.runtime{color:#789baa;font:10px ui-monospace,monospace}
+:root{color-scheme:dark;font-family:Inter,system-ui,Segoe UI,sans-serif;background:#020712;color:#e6f9f4;--mint:#82f5da;--line:#235366}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 52% -10%,#1b3b59,transparent 65%),#020712}
+button,input{font:inherit}button{cursor:pointer;color:inherit;background:#0b2a3d;border:1px solid #3c6c80;border-radius:11px;padding:9px 12px;touch-action:manipulation}
+button:hover,button:focus-visible{background:#22546d;outline:2px solid #98ffdf;outline-offset:1px}
+a{color:#a8f9df}.shell{max-width:1980px;margin:0 auto;padding:21px clamp(12px,2.6vw,46px) 30px}
+.top{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:18px;flex-wrap:wrap}
+.kicker,.micro{color:#92f2de;font:11px ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase}
+h1{font-size:clamp(30px,4.2vw,62px);letter-spacing:-.07em;margin:6px 0 4px;line-height:1.02}
+.lead{color:#b0cbd7;max-width:735px;margin:9px 0 0;font-size:14px;line-height:1.55}
+.telemetry{text-align:right;display:flex;align-items:flex-end;flex-direction:column;gap:8px}
+.status{border:1px solid #347767;border-radius:25px;padding:8px 13px;color:#b0f8d1;background:#08271c;font:11px ui-monospace,monospace;white-space:nowrap}
+.status.off{border-color:#8c5b5c;background:#291c29;color:#ffbec2}
+.runtime{color:#9ec2d0;font:10px ui-monospace,monospace;letter-spacing:.08em}
 .grid{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:15px}
-.stage{position:relative;min-width:0;overflow:hidden;isolation:isolate;border:1px solid #2a5967;border-radius:22px;background:radial-gradient(ellipse at 50% 52%,#12334a,#03121f 65%,#020915);box-shadow:inset 0 0 95px #0009,0 20px 60px #0007}
-.stage:after{content:"";pointer-events:none;position:absolute;inset:0;z-index:2;box-shadow:inset 0 0 95px 25px #01050bb0}
-#vortexBackground{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
-#world{cursor:grab;position:relative;z-index:1;display:block;width:100%;height:min(67vh,730px);min-height:520px;touch-action:none;user-select:none;-webkit-user-select:none}
-.axis,.flight,.outside{position:absolute;z-index:3;pointer-events:none;font:11px ui-monospace,monospace;color:#a2c7d3;letter-spacing:.04em;text-shadow:0 1px 8px #000}
-.axis{top:19px;left:20px}.flight{bottom:19px;left:20px}.outside{bottom:19px;right:20px;text-align:right;color:#c9a8f2}
-.controls{position:absolute;z-index:5;right:15px;top:15px;display:flex;gap:7px;flex-wrap:wrap;justify-content:end;max-width:65%}
-.controls button{background:#051b2bce;border-color:#3d6878;backdrop-filter:blur(8px);padding:9px 12px}
-.edge{fill:none;stroke:#66a9b9;stroke-width:1.5;stroke-dasharray:6 9;opacity:.62;pointer-events:none}
-.ring{fill:#0b2330ed;stroke:#9cfae2;stroke-width:2.2;filter:drop-shadow(0 0 9px #52e8c2)}
-.ring.portal{stroke:#d7a2ff;filter:drop-shadow(0 0 13px #ab57ff)}
-.ring.selected{stroke:white;stroke-width:4}.mark{fill:#effffc;font:700 18px ui-monospace,monospace;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
-.label-hit{fill:#0a2938e6;stroke:#2b6671;stroke-width:1;pointer-events:all}.hit:hover .label-hit,.hit:focus-visible .label-hit{fill:#215369;stroke:#a4ffec}
-.label{fill:#ecfff8;font:600 15px system-ui,sans-serif;text-anchor:middle;paint-order:stroke;stroke:#081927;stroke-width:5;pointer-events:none;user-select:none}
-.hit,.hit *{cursor:pointer!important;user-select:none;-webkit-user-select:none}
-.hit:focus-visible .ring,.hit:hover .ring{stroke:#fff;stroke-width:4;filter:drop-shadow(0 0 18px #fff)}
-.hit:focus-visible{outline:none}
-.touch-target{fill:transparent;stroke:none;pointer-events:all}
-.event-dot{stroke:#051320;stroke-width:2;filter:drop-shadow(0 0 7px currentColor);pointer-events:none}
-.event-dot.run-start{fill:#ffcc87;color:#ffcc87}.event-dot.run-end{fill:#8bf3c6;color:#8bf3c6}.event-dot.failed{fill:#ff7e99;color:#ff7e99}
-.event-dot.note{fill:#80b9ff;color:#80b9ff}.event-dot.portal{fill:#dfacff;color:#dfacff}
-.core-outer{fill:#100e25e8;stroke:#dcaaff;stroke-width:2.5;filter:drop-shadow(0 0 20px #ae7dff)}
-.core-inner{fill:#030512;stroke:#6acdcf;stroke-width:1.6;pointer-events:none}
-.core-text{font:700 11px ui-monospace,monospace;letter-spacing:.22em;text-anchor:middle;fill:#efd9ff;pointer-events:none}
-.side{background:linear-gradient(165deg,#0c2735,#071622);border:1px solid #2b5263;border-radius:22px;padding:20px;min-width:0;max-height:calc(min(67vh,730px) + 2px);overflow:auto}
-h2{margin:0 0 14px;text-transform:uppercase;letter-spacing:.15em;font:700 12px ui-monospace,monospace;color:#8aeccc}
-h3{font-size:22px;margin:9px 0 12px;overflow-wrap:anywhere}
-.detail{min-height:188px;border-bottom:1px solid #345367;padding-bottom:18px;color:#c4dee7;line-height:1.6;overflow-wrap:anywhere}
-.detail p{margin:7px 0}.detail pre,.detail code{font:11px/1.6 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
-.detail pre{max-height:180px;overflow:auto;background:#04101b;padding:11px;border:1px solid #223f53;border-radius:10px}
-.detail small{color:#9ac1c9}.timeline{list-style:none;margin:0;padding:0}.timeline li{border-bottom:1px solid #244354}
-.timeline button{border:0;border-radius:6px;background:transparent;text-align:left;width:100%;display:grid;grid-template-columns:30px minmax(0,1fr);gap:8px;padding:11px 5px}
-.timeline button:hover,.timeline button:focus-visible,.timeline button.active{background:#1c4652}
-.timeline b{color:#8cf1ce;font:11px ui-monospace,monospace}.timeline strong{display:block;font-size:13px}.timeline small{color:#92aebb;font:11px ui-monospace,monospace}
-.time{display:flex;align-items:center;gap:15px;padding:16px 20px;margin-top:14px;background:#081d2b;border:1px solid #2b5365;border-radius:18px}
-.time label{font:12px ui-monospace,monospace;color:#8ee4cd}.time input{flex:1;min-width:90px;accent-color:#8af2d2}.time output{font:12px ui-monospace,monospace;min-width:68px;text-align:right}
-.legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:13px;font:11px ui-monospace,monospace;color:#8baab6}
+.stage{position:relative;min-width:0;overflow:hidden;isolation:isolate;border:1px solid #326475;border-radius:23px;background:#031221;box-shadow:inset 0 0 110px #000c,0 25px 75px #0008}
+#world{display:block;width:100%;height:min(70vh,760px);min-height:530px;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+#world:focus-visible{outline:3px solid #a1ffe9;outline-offset:-6px}
+.stage:after{content:"";position:absolute;inset:0;box-shadow:inset 0 0 92px #000b;pointer-events:none}
+.axis,.flight,.outside,.coords{position:absolute;z-index:3;pointer-events:none;font:10px ui-monospace,monospace;letter-spacing:.08em;text-shadow:0 2px 12px #000}
+.axis{top:16px;left:17px;color:#b3dbeb}.flight{bottom:18px;left:17px;color:#a6f6dd}.outside{bottom:18px;right:18px;text-align:right;color:#d6b7fa}.coords{top:48px;left:17px;color:#83aece}
+.controls{position:absolute;z-index:5;right:14px;top:13px;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;max-width:69%}
+.controls button{padding:9px 11px;backdrop-filter:blur(12px);background:#051e30da;border-color:#406f89;font-size:12px}
+.side{background:linear-gradient(165deg,#0b2938,#061522);border:1px solid #2e586a;border-radius:23px;padding:18px;min-width:0;max-height:calc(min(70vh,760px) + 2px);overflow:auto}
+h2{margin:0 0 13px;text-transform:uppercase;letter-spacing:.15em;font:700 12px ui-monospace,monospace;color:#8be7d1}
+h3{font-size:22px;margin:9px 0 13px;overflow-wrap:anywhere}
+.detail{min-height:188px;border-bottom:1px solid #345466;padding-bottom:18px;color:#c4dfe6;line-height:1.55;overflow-wrap:anywhere}
+.detail p{margin:8px 0}.detail pre,.detail code{font:11px/1.6 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.detail pre{max-height:170px;overflow:auto;background:#04111c;padding:11px;border:1px solid #284659;border-radius:11px}
+.detail small{color:#9ec6d5}.timeline{list-style:none;margin:0;padding:0}.timeline li{border-bottom:1px solid #274251}
+.timeline button{border:0;border-radius:8px;background:transparent;text-align:left;width:100%;display:grid;grid-template-columns:28px minmax(0,1fr);gap:9px;padding:11px 5px}
+.timeline button:hover,.timeline button:focus-visible,.timeline button.active{background:#1b4959}
+.timeline b{color:#92f1d7;font:11px ui-monospace,monospace}.timeline strong{display:block;font-size:13px}.timeline small{color:#94b5bf;font:11px ui-monospace,monospace}
+.time{display:flex;align-items:center;gap:15px;padding:15px 19px;margin-top:14px;background:#081e2d;border:1px solid #2e5368;border-radius:17px}
+.time label{font:11px ui-monospace,monospace;color:#a1eeda}.time input{flex:1;min-width:90px;accent-color:#91f8d4}.time output{font:12px ui-monospace,monospace;min-width:62px;text-align:right}
+.legend{display:flex;gap:15px;flex-wrap:wrap;margin-top:14px;font:11px ui-monospace,monospace;color:#9cb9c5}
 .legend span:before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:#9debd4}
-.legend span:nth-child(2):before{background:#80b9ff}.legend span:nth-child(3):before{background:#ffcc87}.legend span:nth-child(4):before{background:#dfacff}
-#heads{margin:14px 0;color:#7699a7;line-height:1.55}
-@media(max-width:1040px){.grid{grid-template-columns:1fr}.side{max-height:460px}.telemetry{text-align:left;align-items:flex-start}}
-@media(max-width:620px){.shell{padding:12px}.axis{font-size:9px}.outside{display:none}.controls{top:42px;max-width:90%}.time{flex-wrap:wrap}.time input{order:3;flex-basis:100%}#world{height:520px}.flight{font-size:9px}}
+.legend span:nth-child(2):before{background:#92baff}.legend span:nth-child(3):before{background:#ffc78a}.legend span:nth-child(4):before{background:#d8aeff}
+#heads{margin:13px 0;color:#8baebb;line-height:1.55}
+.help{color:#8aaebc;font-size:12px;line-height:1.5;padding:0 1px}
+@media(max-width:1080px){.grid{grid-template-columns:1fr}.side{max-height:410px}.telemetry{text-align:left;align-items:flex-start}}
+@media(max-width:620px){.shell{padding:12px}.axis{font-size:8px}.controls{top:62px;max-width:100%;left:10px;right:10px;justify-content:flex-end}.controls button{padding:8px;font-size:10px}#world{height:555px}.outside{display:none}.flight{font-size:9px;bottom:12px}.coords{top:34px}.time{flex-wrap:wrap}.time input{order:3;flex-basis:100%}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important}}
 </style>
 </head>
 <body><div class="shell">
-<header class="top"><div><div class="kicker">Console Zero / Experiment 02</div><h1>Raumzeit der Versuche.</h1><p class="lead">Jeder Punkt hat einen Beleg. Zweige zeigen Herkunft; die Zeitspur zeigt, wann Gartenbefehle und ausdrücklich gestartete Programme erfasst wurden.</p></div><div class="telemetry"><div id="connection" class="status">VERBINDE LOKAL …</div><div id="runtime" class="runtime">JAVASCRIPT WARTET · VORTEX 0.5.1</div></div></header>
-<div class="grid"><main class="stage" aria-label="Bewegliche Raumzeit mit belegten Knoten"><canvas id="vortexBackground" aria-hidden="true"></canvas><div class="axis">X · BEZIEHUNG &nbsp; Y · RAUM &nbsp; Z · TIEFE &nbsp; T · EREIGNISZEIT</div><div class="controls"><button id="zoomIn" title="Vergrößern" aria-label="Vergrößern">＋</button><button id="zoomOut" title="Verkleinern" aria-label="Verkleinern">－</button><button id="home" title="Gesamtansicht" aria-label="Gesamtansicht">⌂</button><button id="motionToggle" aria-pressed="true">Ⅱ Flug stoppen</button></div><svg id="world" viewBox="0 0 1200 680" preserveAspectRatio="none" role="group" aria-label="Klickbare Knoten und Ereignisse"></svg><div id="flightStatus" class="flight">VORTEX · WARTET AUF SKRIPT</div><div class="outside">EXTERN · NUR BELEGTE PORTALE</div></main>
-<aside class="side"><h2>Ausgewählter Punkt</h2><div id="detail" class="detail">Wähle einen Knoten oder einen Zeitpunkt.</div><h2 style="margin-top:20px">Offene Wachstumsspur</h2><ol id="timeline" class="timeline"></ol></aside></div>
-<div class="time"><label for="timeSlider">MODELLANSICHT / T</label><button id="follow" aria-pressed="true">● Live folgen</button><input id="timeSlider" type="range" min="0" max="0" value="0" aria-label="Zeitposition"><output id="timeLabel">0 / 0</output></div>
+<header class="top"><div><div class="kicker">Console Zero / Experiment 02</div><h1>KORRIDOT · Raumzeitkorridor.</h1><p class="lead">Jeder Punkt hat einen Beleg. Zweige zeigen Herkunft; die Zeitspur zeigt, wann Gartenbefehle und ausdrücklich gestartete Programme erfasst wurden.</p></div><div class="telemetry"><div id="connection" class="status">VERBINDE LOKAL …</div><div id="runtime" class="runtime">JAVASCRIPT WARTET · KORRIDOT 0.6</div></div></header>
+<div class="grid"><main class="stage" aria-label="Perspektivischer 3D-Korridor mit belegten Ereignissen"><canvas id="world" tabindex="0" role="application" aria-label="3D-Korridor: klicken zum Öffnen, ziehen zum Blickwechsel, Mausrad zum Vor- und Zurückfliegen, Pfeile und Leertaste als Tastatursteuerung"></canvas><div class="axis">X / Y / Z · VERFORMBARER MODELLRAUM &nbsp; T · BELEGZEIT</div><div class="coords" id="coords">KAMERA Z 0 · T 0/0</div><div class="controls"><button id="zoomIn" aria-label="Sichtfeld vergrößern" title="Sichtfeld vergrößern">＋</button><button id="zoomOut" aria-label="Sichtfeld verkleinern" title="Sichtfeld verkleinern">－</button><button id="home" aria-label="Zurück zum Korridoreingang" title="Zum Korridoreingang">⌂</button><button id="horizon" title="Zum Raumhorizont fliegen">◎ Horizont</button><button id="warpToggle" aria-pressed="true" title="Raumverformung umschalten">◇ Raumdehnung AN</button><button id="motionToggle" aria-pressed="true">Ⅱ Flug stoppen</button></div><div class="flight" id="flightStatus">KORRIDOT · WARTET AUF SCRIPT</div><div class="outside">PROJEKTION · KEINE REALE RAUMZEIT</div></main>
+<aside class="side"><h2>Ausgewählter Punkt</h2><div id="detail" class="detail">Wähle einen Körper oder einen Zeitpunkt.</div><h2 style="margin-top:20px">Offene Wachstumsspur</h2><ol id="timeline" class="timeline"></ol></aside></div>
+<div class="time"><label for="timeSlider">MODELLANSICHT / T</label><button id="follow" aria-pressed="true">● Live folgen</button><input id="timeSlider" type="range" min="0" max="0" value="0" aria-label="Zeitposition der aufgezeichneten Ereignisse"><output id="timeLabel">0 / 0</output></div>
+<p class="help">Mausrad: durch Z fliegen · Ziehen: Blickrichtung ändern · Klick: Ereignis öffnen · Leertaste: Flug anhalten / starten · W/S oder Pfeile: Vor- und Zurückflug. Der Korridor ist eine mathematische 3D-Projektion, keine physikalische Raumzeit.</p>
 <div class="legend"><span>Keim &amp; Äste</span><span>Beschreibung</span><span>echter Konsolenlauf</span><span>Portal</span></div><p class="micro" id="heads">LOKAL · BELEGSTATUS OFFEN</p>
 <noscript>Diese Ansicht benötigt JavaScript. Öffne die URL, die ./garden live ausgibt, in einem Browser mit aktivem JavaScript.</noscript>
 </div><script src="/garden_live.js"></script></body></html>
