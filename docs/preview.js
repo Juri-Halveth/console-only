@@ -15,7 +15,7 @@
   const heads = document.getElementById('heads');
   const coords = document.getElementById('coords');
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  document.getElementById('runtime').textContent = '● JAVASCRIPT AKTIV · KORRIDOT 0.6';
+  document.getElementById('runtime').textContent = '● JAVASCRIPT AKTIV · KORRIDOT 0.7';
   const CORE = 'navigation:singularity';
   const TAU = Math.PI * 2;
   const STEP = 20;
@@ -42,6 +42,17 @@
   let view = null;
   let lastHover = null;
   let frameCount = 0;
+  // All input devices feed one continuously integrated flight state.
+  let thrustHeld = false;
+  let wheelImpulse = 0;
+  let flightSpeed = 0;
+  let shipX = 0, shipY = 0;
+  let shipVX = 0, shipVY = 0;
+  let targetYaw = 0, targetPitch = 0;
+  let roll = 0;
+  let fps = 0, fpsCounter = 0, fpsLast = 0;
+  let quality = 1;
+  const keys = new Set();
   const hashName = str => {
     let hash = 2166136261;
     for (const c of String(str)) hash = Math.imul(hash ^ c.codePointAt(0), 16777619);
@@ -50,10 +61,19 @@
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
   const mix = (a, b, t) => a + (b - a) * t;
   const sample = n => { const v = Math.sin(n * 127.1 + 83.72) * 43758.545; return v - Math.floor(v); };
-  const dust = Array.from({ length: 185 }, (_, i) => ({
-    z: sample(i + 1) * 270, a: sample(i + 201) * TAU, radius: .16 + sample(i + 601) * .67,
-    size: .55 + sample(i + 1001) * 1.4
-  }));
+  // Deterministic, authored 3D star volumes. These are visual stars, not an astronomy catalogue.
+  // Partitioning by Z means only nearby star cells are projected each frame.
+  const starCells = Array.from({ length: 315 }, (_, cell) =>
+    Array.from({ length: 52 }, (_, j) => {
+      const id = cell * 52 + j;
+      const z = cell * 16 + sample(id + 7) * 16;
+      const a = sample(id + 201) * TAU;
+      const radius = 2.5 + Math.sqrt(sample(id + 701)) * 35;
+      const c = bend(z);
+      return {x:c.x + radius * Math.cos(a), y:c.y + radius * Math.sin(a), z,
+        size:.55 + sample(id + 1301) * 1.55,
+        tint:sample(id + 1701), phase:sample(id + 2101) * TAU};
+    }));
 
   function entryList(data) {
     const rows = [
@@ -153,9 +173,9 @@
   }
   function camera() {
     const c = bend(cameraZ), next = bend(cameraZ + .3);
-    return { x: c.x, y: c.y, z: cameraZ,
+    return { x: c.x + shipX, y: c.y + shipY, z: cameraZ,
       yaw: Math.atan2(next.x - c.x, .3) + yawOffset,
-      pitch: Math.atan2(next.y - c.y, .3) + pitchOffset };
+      pitch: Math.atan2(next.y - c.y, .3) + pitchOffset, roll };
   }
   function project(p) {
     const dx = p.x - view.x, dy = p.y - view.y, dz = p.z - view.z;
@@ -165,10 +185,12 @@
     const c = Math.cos(view.pitch), d = Math.sin(view.pitch);
     const yy = dy * c - zz * d;
     const depth = dy * d + zz * c;
+    const rr = Math.cos(view.roll), rs = Math.sin(view.roll);
+    const hx = xx*rr - yy*rs, hy = xx*rs + yy*rr;
     if (depth < .8 || depth > 310) return null;
     const focal = Math.min(width * .94, height * 1.03) * lens;
-    return { x: width * .5 + xx * focal / depth,
-      y: height * .5 - yy * focal / depth, depth,
+    return { x: width * .5 + hx * focal / depth,
+      y: height * .5 - hy * focal / depth, depth,
       scale: focal / depth };
   }
   function setCanvasSize() {
@@ -203,78 +225,73 @@
     core.addColorStop(.38, '#4d59b42b'); core.addColorStop(1, '#14264a00');
     ctx.fillStyle = core; ctx.beginPath(); ctx.arc(c.x,c.y,110,0,TAU); ctx.fill();
   }
-  function drawWireRing(z, emphasis = false) {
-    const pts = [];
-    const n = width < 480 ? 28 : 42;
-    for (let k = 0; k <= n; k++) pts.push(project(surface(z, k / n * TAU)));
-    const depth = z - cameraZ;
-    const a = fade(depth);
-    pathThrough(pts);
-    ctx.strokeStyle = emphasis ? `rgba(182,142,255,${(.19 + a * .32).toFixed(3)})`
-      : `rgba(101,235,218,${(.07 + a * .32).toFixed(3)})`;
-    ctx.lineWidth = emphasis ? 1.9 : .75 + a * .7;
-    ctx.stroke();
-    // A translucent elastic cross-section is *inside* the projected tube, not a separate background.
-    if (emphasis && pts.every(Boolean)) {
-      pathThrough(pts, true);
-      ctx.fillStyle = `rgba(114,90,181,${(.014 + a * .018).toFixed(3)})`;
-      ctx.fill();
+  function drawStars() {
+    // Stars are fixed world-space points: parallax is caused by camera translation,
+    // not a scrolling texture or a separate layer.
+    const first = Math.max(0, Math.floor(cameraZ / 16));
+    const last = Math.min(starCells.length-1, Math.ceil((cameraZ+290)/16));
+    const stride = quality < .65 ? 2 : 1;
+    const motionBlur = Math.min(1,Math.abs(flightSpeed)/32);
+    for (let cell=last;cell>=first;cell--) {
+      for (let j=0;j<starCells[cell].length;j+=stride) {
+        const star=starCells[cell][j];
+        const p=project(star);
+        if(!p||p.x<0||p.y<0||p.x>=width||p.y>=height)continue;
+        const intensity=clamp((1-p.depth/310)*.66 + .13, .07, .8);
+        const twinkle=.92+.08*Math.sin(phase*.0013+star.phase);
+        const size=clamp(star.size*p.scale*.12,.4,2.4);
+        const rgb=star.tint>.88?'255,205,170':star.tint<.13?'150,200,255':'225,243,255';
+        ctx.fillStyle=`rgba(${rgb},${(intensity*twinkle).toFixed(3)})`;
+        if(motionBlur>.16&&p.depth<105){
+          // Lens-space star streaks reflect speed, but never imply physical star motion.
+          ctx.strokeStyle=`rgba(${rgb},${(intensity*.42*motionBlur).toFixed(3)})`;
+          ctx.lineWidth=Math.max(.6,size*.6);
+          ctx.beginPath();ctx.moveTo(p.x,p.y);
+          ctx.lineTo(p.x+(p.x-width*.5)*.012*motionBlur,
+            p.y+(p.y-height*.5)*.012*motionBlur);ctx.stroke();
+        }
+        ctx.fillRect(p.x-size*.5,p.y-size*.5,size,size);
+        if(star.tint>.967&&p.depth<175&&quality>.65){
+          ctx.strokeStyle=`rgba(${rgb},${(intensity*.37).toFixed(3)})`;
+          ctx.lineWidth=.6;
+          ctx.beginPath();ctx.moveTo(p.x-size*2.8,p.y);ctx.lineTo(p.x+size*2.8,p.y);
+          ctx.moveTo(p.x,p.y-size*2.8);ctx.lineTo(p.x,p.y+size*2.8);ctx.stroke();
+        }
+      }
     }
   }
-  function drawTube(z, index) {
-    const far = z + 4.6;
-    const d = z - cameraZ;
-    const alpha = fade(d);
-    if (d > 284 || d < 1) return;
-    // Elastic surface is tessellated in the same XYZ space as the event gates.
-    // Translucent ribbons pass behind and in front of the recorded bodies by depth.
-    for (let k = 0; k < 24; k += 1) {
-      const a = TAU * k / 24, b = TAU * (k + 1) / 24;
-      const p = project(surface(z,a)), q = project(surface(far,a));
-      const s = project(surface(z,b)), t = project(surface(far,b));
-      if (!p || !q || !s || !t) continue;
-      if ((k + index) % 3 !== 1) {
-        pathThrough([p,q,t,s],true);
-        ctx.fillStyle = (k % 2 === 0) ? `rgba(53,175,192,${(.008 + alpha * .013).toFixed(3)})`
-          : `rgba(94,77,181,${(.009 + alpha * .014).toFixed(3)})`;
-        ctx.fill();
+  function drawFilaments() {
+    // Elastic strands share the SAME bend/surface/project math as receipt markers.
+    // They read as a distant spatial fabric, rather than stacked transverse bars.
+    const count=quality<.65?8:13;
+    const step=quality<.65?11:7;
+    for(let filament=0;filament<count;filament++){
+      const origin=TAU*filament/count;
+      const points=[];
+      for(let z=cameraZ+282;z>cameraZ+2;z-=step){
+        const spiral=origin + z*.006 + Math.sin(z*.012+origin)*.17;
+        points.push(project(surface(z,spiral,.82+Math.sin(z*.025+origin)*.12)));
       }
-      pathThrough([p,q]);
-      ctx.strokeStyle = (k % 3 === 0) ? `rgba(120,243,230,${(.07 + alpha * .23).toFixed(3)})`
-        : `rgba(91,126,202,${(.025 + alpha * .10).toFixed(3)})`;
-      ctx.lineWidth = k % 3 === 0 ? 1.2 : .7;
+      pathThrough(points);
+      ctx.lineWidth=filament%4===0?1.2:.7;
+      ctx.strokeStyle=filament%3===0?'rgba(163,127,235,.22)':'rgba(83,209,217,.15)';
       ctx.stroke();
     }
-    if (index % 2 === 0) drawWireRing(z, index % 10 === 0);
   }
   function drawGate(row, index) {
     const z = zFor(index), dep = z - cameraZ;
     if (dep < 1 || dep > 274) return;
     const a = fade(dep);
+    // A partial, spatially localized time membrane, not another tunnel hoop.
+    const angle = (hashName(row.key) % 628) / 100;
     const pts = [];
-    for (let k = 0; k <= 50; k++) pts.push(project(surface(z, TAU*k/50, .77)));
+    for (let k = 0; k <= 20; k++) pts.push(project(surface(z, angle + (k-10)*.038, .67)));
     pathThrough(pts);
     const e = row.entry;
     const color = e.kind === 'run-end' ? [123,243,181] : e.kind === 'run-start' ? [248,189,124]
       : e.kind === 'portal' ? [215,149,255] : [115,225,239];
-    ctx.strokeStyle = `rgba(${color.join(',')},${(.12 + a * .35).toFixed(3)})`;
-    ctx.lineWidth = 1.0 + 1.7*a; ctx.stroke();
-    if (dep < 70 && pts.every(Boolean)) {
-      pathThrough(pts, true);
-      ctx.fillStyle = `rgba(${color.join(',')},${(.015 + .02*a).toFixed(3)})`;
-      ctx.fill();
-    }
-  }
-  function drawDust() {
-    const length = 270;
-    for (const v of dust) {
-      const z = cameraZ + ((v.z - (cameraZ % length) + length) % length) + 2;
-      const p = project(surface(z, v.a, v.radius));
-      if (!p || p.x < -4 || p.y < -4 || p.x > width + 4 || p.y > height + 4) continue;
-      const size = clamp(v.size * p.scale * .16, .45, 3.7);
-      ctx.fillStyle = `rgba(183,238,254,${(.25 + fade(p.depth)*.37).toFixed(2)})`;
-      ctx.beginPath(); ctx.arc(p.x,p.y,size,0,TAU);ctx.fill();
-    }
+    ctx.strokeStyle = `rgba(${color.join(',')},${(.07 + a * .28).toFixed(3)})`;
+    ctx.lineWidth = 1.0 + 1.2*a; ctx.stroke();
   }
   function place(row, index) {
     const z = zFor(index);
@@ -352,14 +369,8 @@
     drawBackdrop();
     const visible=ordered.slice(0,Number(slider.value));
     const drawable=[];
-    const ringStep=4.6;
-    for (let i=65;i>=1;i--) {
-      const z=cameraZ+i*ringStep;
-      if (z-cameraZ>290) continue;
-      drawable.push({z,draw:()=>drawTube(z,i)});
-    }
-    // Dust uses this exact projection too; it is not an independent background animation.
-    drawDust();
+    drawFilaments();
+    drawStars();
     const points=visible.map((row,i)=>place(row,i));
     const indexByName=new Map();
     visible.forEach((row,i)=>{if(row.entry.kind==='seed'||row.entry.kind==='branch') indexByName.set(row.entry.name,i);});
@@ -377,7 +388,7 @@
     drawable.sort((a,b)=>b.z-a.z);
     for (const d of drawable) d.draw();
     const behind=ordered.reduce((n,row,i)=>n+(zFor(i)<cameraZ?1:0),0);
-    coords.textContent=`KAMERA Z ${cameraZ.toFixed(1)} · T ${behind}/${ordered.length} · ${motion?'FLUG':'HALT'}`;
+    coords.textContent=`X ${shipX.toFixed(1)} · Y ${shipY.toFixed(1)} · Z ${cameraZ.toFixed(1)} · ${Math.round(flightSpeed)} u/s · ${fps||'…'} FPS · T ${behind}/${ordered.length}`;
     timeLabel.textContent=slider.value+' / '+ordered.length;
     timeLabel.title=Number(slider.value)?ordered[Number(slider.value)-1].at:'';
   }
@@ -419,7 +430,9 @@
   document.getElementById('zoomIn').onclick=()=>{lens=clamp(lens*1.15,.55,1.9);drawScene();};
   document.getElementById('zoomOut').onclick=()=>{lens=clamp(lens/1.15,.55,1.9);drawScene();};
   document.getElementById('home').onclick=()=>{
-    motion=false;updateMotionButton();cameraZ=0;targetZ=null;yawOffset=0;pitchOffset=0;drawScene();
+    motion=false;updateMotionButton();cameraZ=0;targetZ=null;
+    shipX=shipY=shipVX=shipVY=flightSpeed=wheelImpulse=0;
+    yawOffset=pitchOffset=targetYaw=targetPitch=roll=0;drawScene();
   };
   document.getElementById('horizon').onclick=()=>{
     const end=Math.max(198,zFor(ordered.length-1)+60);
@@ -442,82 +455,143 @@
     const rect=canvas.getBoundingClientRect();
     return {x:event.clientX-rect.left,y:event.clientY-rect.top};
   }
+  function steerTo(point,weight=1) {
+    targetYaw=clamp(((point.x/Math.max(1,width))-.5)*1.65*weight,-.85,.85);
+    targetPitch=clamp((.5-(point.y/Math.max(1,height)))*1.14*weight,-.58,.58);
+  }
+  function endPointer(event) {
+    if(!pointerStart || pointerStart.id!==event.pointerId)return;
+    const initial=pointerStart;
+    pointerStart=null;
+    if(initial.mode==='pilot')thrustHeld=false;
+    if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);
+    if(dragged){dragged=false;return;}
+    // Touch tap still selects receipt markers; touch hold/drag flies.
+    if(initial.mode==='pilot' && !(event.pointerType==='touch' && !dragged &&
+      performance.now()-initial.at<260)) return;
+    const p=localPoint(event),key=pick(p.x,p.y);
+    if(key){selected=key;motion=false;targetZ=null;updateMotionButton();showDetail();}
+    else {selected=null;showDetail();}
+    drawScene();
+  }
+  canvas.addEventListener('contextmenu',event=>event.preventDefault());
   canvas.addEventListener('pointerdown',event=>{
-    if(event.button!==0) return;
+    if(event.pointerType!=='touch'&&event.button!==0&&event.button!==2)return;
     const p=localPoint(event);
-    pointerStart={id:event.pointerId,x:p.x,y:p.y,startYaw:yawOffset,startPitch:pitchOffset};
+    // Right-held mouse and touch both control live thrust + direction.
+    const mode=event.pointerType==='touch'||event.button===2?'pilot':'look';
+    pointerStart={id:event.pointerId,x:p.x,y:p.y,startYaw:targetYaw,startPitch:targetPitch,mode,at:performance.now()};
     dragged=false;
+    if(mode==='pilot'){
+      thrustHeld=true;
+      steerTo(p,.6);
+    }
+    canvas.focus({preventScroll:true});
     canvas.setPointerCapture(event.pointerId);
+    if(event.pointerType==='touch')event.preventDefault();
   });
   canvas.addEventListener('pointermove',event=>{
     const p=localPoint(event);
     if(pointerStart&&pointerStart.id===event.pointerId){
       const dx=p.x-pointerStart.x,dy=p.y-pointerStart.y;
-      if(Math.hypot(dx,dy)>5)dragged=true;
-      if(dragged){
-        motion=false;targetZ=null;updateMotionButton();
-        yawOffset=clamp(pointerStart.startYaw-dx*.0021,-.78,.78);
-        pitchOffset=clamp(pointerStart.startPitch+dy*.0018,-.65,.65);
-        drawScene();
+      if(Math.hypot(dx,dy)>6)dragged=true;
+      if(pointerStart.mode==='pilot') steerTo(p);
+      else if(dragged){
+        targetYaw=clamp(pointerStart.startYaw-dx*.0022,-.85,.85);
+        targetPitch=clamp(pointerStart.startPitch+dy*.0019,-.58,.58);
       }
-    } else {
+    }else{
       const hit=pick(p.x,p.y);
-      if(hit!==lastHover){lastHover=hit;canvas.style.cursor=hit?'pointer':'grab';}
+      if(hit!==lastHover){lastHover=hit;canvas.style.cursor=hit?'pointer':'crosshair';}
     }
   });
-  canvas.addEventListener('pointerup',event=>{
-    if(!pointerStart||pointerStart.id!==event.pointerId)return;
-    const p=localPoint(event);
-    pointerStart=null;
-    if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);
-    if(dragged){dragged=false;return;}
-    const key=pick(p.x,p.y);
-    if(key){
-      selected=key;motion=false;targetZ=null;updateMotionButton();
-      showDetail();drawScene();
-    } else {selected=null;showDetail();drawScene();}
+  canvas.addEventListener('pointerup',endPointer);
+  canvas.addEventListener('pointercancel',event=>{
+    if(pointerStart&&pointerStart.id===event.pointerId){pointerStart=null;dragged=false;thrustHeld=false;}
   });
-  canvas.addEventListener('pointercancel',()=>{pointerStart=null;dragged=false;});
+  canvas.addEventListener('lostpointercapture',()=>{if(pointerStart){pointerStart=null;thrustHeld=false;dragged=false;}});
   canvas.addEventListener('wheel',event=>{
-    event.preventDefault();motion=false;targetZ=null;updateMotionButton();
-    cameraZ=clamp(cameraZ+Math.sign(event.deltaY)*9,0,maxTravel());drawScene();
+    event.preventDefault();
+    // Wheel contributes a decaying velocity impulse instead of stepping cameraZ.
+    wheelImpulse=clamp(wheelImpulse+Math.sign(event.deltaY)*7,-25,25);
   },{passive:false});
+  const allowed=new Set(['w','s','a','d','q','e','Shift','ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ','Home','Enter']);
   canvas.addEventListener('keydown',event=>{
-    if(['ArrowRight','ArrowLeft','ArrowUp','ArrowDown',' ','Enter','Home'].includes(event.key))event.preventDefault();
-    if(event.key==='ArrowRight'||event.key==='w'){
-      motion=false;cameraZ=clamp(cameraZ+8,0,maxTravel());
-    } else if(event.key==='ArrowLeft'||event.key==='s'){
-      motion=false;cameraZ=clamp(cameraZ-8,0,maxTravel());
-    } else if(event.key==='ArrowUp'){pitchOffset=clamp(pitchOffset+.10,-.65,.65);}
-    else if(event.key==='ArrowDown'){pitchOffset=clamp(pitchOffset-.10,-.65,.65);}
-    else if(event.key==='Home'){cameraZ=0;pitchOffset=0;yawOffset=0;motion=false;}
-    else if(event.key===' '){motion=!motion;targetZ=null;}
-    else if(event.key==='Enter'){
+    const key=event.key.length===1&&event.key!==' '?event.key.toLowerCase():event.key;
+    if(!allowed.has(key))return;
+    event.preventDefault();keys.add(key);
+    if(event.repeat)return;
+    if(key==='Home'){
+      cameraZ=0;shipX=shipY=shipVX=shipVY=flightSpeed=wheelImpulse=0;
+      yawOffset=pitchOffset=targetYaw=targetPitch=roll=0;targetZ=null;motion=false;
+    }else if(key===' '){motion=!motion;targetZ=null;}
+    else if(key==='Enter'){
       const p=targets.filter(p=>p.key!==CORE).sort((a,b)=>a.depth-b.depth)[0];
       if(p){selected=p.key;showDetail();}
     }
     updateMotionButton();drawScene();
   });
+  canvas.addEventListener('keyup',event=>{
+    const key=event.key.length===1&&event.key!==' '?event.key.toLowerCase():event.key;
+    keys.delete(key);
+  });
+  canvas.addEventListener('blur',()=>{keys.clear();thrustHeld=false;pointerStart=null;});
   window.addEventListener('resize',drawScene);
-  document.addEventListener('visibilitychange',()=>{lastFrame=0;});
+  document.addEventListener('visibilitychange',()=>{
+    lastFrame=0;
+    if(document.hidden){thrustHeld=false;keys.clear();pointerStart=null;}
+  });
   function animate(time) {
-    const dt=lastFrame?clamp((time-lastFrame)/1000,0,.06):0;
+    const dt=lastFrame?clamp((time-lastFrame)/1000,0,.05):0;
     lastFrame=time;
-    if(document.visibilityState==='hidden'){requestAnimationFrame(animate);return;}
-    let changed=false;
+    if(document.hidden){requestAnimationFrame(animate);return;}
+    // dt-based input integration is independent of monitor refresh rate.
+    const damping=1-Math.exp(-dt*7.5);
+    const keyYaw=(keys.has('ArrowRight')?1:0)-(keys.has('ArrowLeft')?1:0);
+    const keyPitch=(keys.has('ArrowUp')?1:0)-(keys.has('ArrowDown')?1:0);
+    if(keyYaw)targetYaw=clamp(targetYaw+keyYaw*dt*.95,-.85,.85);
+    if(keyPitch)targetPitch=clamp(targetPitch+keyPitch*dt*.75,-.58,.58);
+    yawOffset+= (targetYaw-yawOffset)*damping;
+    pitchOffset+=(targetPitch-pitchOffset)*damping;
+    roll+=(clamp(-yawOffset*.32,-.25,.25)-roll)*damping;
+    const forward=keys.has('w')||keys.has('ArrowUp');
+    const reverse=keys.has('s')||keys.has('ArrowDown');
+    const throttle=thrustHeld||forward? (keys.has('Shift')?48:33):motion?12:0;
+    const wanted=reverse?-19:throttle;
+    flightSpeed+=(wanted-flightSpeed)*(1-Math.exp(-dt*(wanted?2.9:2.2)));
     if(targetZ!==null){
       const diff=targetZ-cameraZ;
-      if(Math.abs(diff)>.035){cameraZ+=diff*Math.min(1,dt*5.5);changed=true;}
-      else {cameraZ=targetZ;targetZ=null;changed=true;}
+      if(Math.abs(diff)>.04) cameraZ+=diff*(1-Math.exp(-dt*5.5));
+      else{cameraZ=targetZ;targetZ=null;}
+    }else{
+      cameraZ+=dt*(flightSpeed+wheelImpulse);
+      if(cameraZ>maxTravel()){
+        cameraZ=0;shipX=shipY=shipVX=shipVY=0; // visual looping never creates log events
+      }
+      cameraZ=Math.max(0,cameraZ);
     }
-    if(motion){
-      cameraZ+=dt*11.5;
-      if(cameraZ>maxTravel())cameraZ=0; // visual looping never creates log events
-      changed=true;
-    }
-    if(motion||deformation){phase+=dt*1000;changed=true;}
-    frameCount++;
-    if(changed&&frameCount%2===0)drawScene();
+    wheelImpulse*=Math.exp(-dt*4.7);
+    if(Math.abs(wheelImpulse)<.02)wheelImpulse=0;
+    const sidestep=(keys.has('d')?1:0)-(keys.has('a')?1:0);
+    const lift=(keys.has('e')?1:0)-(keys.has('q')?1:0);
+    const sideways=Math.sin(yawOffset)*Math.max(0,flightSpeed)*.32+sidestep*13;
+    const upward=Math.sin(pitchOffset)*Math.max(0,flightSpeed)*.32+lift*13;
+    shipVX+=(sideways-shipVX)*(1-Math.exp(-dt*4));
+    shipVY+=(upward-shipVY)*(1-Math.exp(-dt*4));
+    shipX=clamp(shipX+shipVX*dt,-7.2,7.2);
+    shipY=clamp(shipY+shipVY*dt,-6,6);
+    if(Math.abs(shipX)>=7.2)shipVX=0;
+    if(Math.abs(shipY)>=6)shipVY=0;
+    if(motion||thrustHeld||deformation||Math.abs(flightSpeed)>.1)phase+=dt*1000;
+    fpsCounter++;
+    if(!fpsLast)fpsLast=time;
+    if(time-fpsLast>=700){fps=Math.round(fpsCounter*1000/(time-fpsLast));fpsCounter=0;fpsLast=time;}
+    // Browser chooses its own refresh schedule; do not deliberately discard every second frame.
+    const start=performance.now();
+    drawScene();
+    const renderMs=performance.now()-start;
+    if(renderMs>24)quality=.55;
+    else if(renderMs<13)quality=Math.min(1,quality+.015);
     requestAnimationFrame(animate);
   }
   updateMotionButton();
@@ -525,7 +599,9 @@
   requestAnimationFrame(animate);
   // A read-only geometry probe for local reproducible interaction tests.
   window.__korridotProbe=Object.freeze({
-    snapshot:()=>({z:cameraZ,targets:targets.map(({key,x,y,depth})=>({key,x,y,depth})),
+    snapshot:()=>({z:cameraZ,x:shipX,y:shipY,speed:flightSpeed,thrust:thrustHeld,
+      yaw:yawOffset,pitch:pitchOffset,fps,quality,
+      targets:targets.map(({key,x,y,depth})=>({key,x,y,depth})),
       deformation,flight:motion,events:ordered.length,selected}),
     projection:()=>{const p=project(surface(cameraZ+40,.8));return p ? {x:p.x,y:p.y,depth:p.depth}:null;}
   });
