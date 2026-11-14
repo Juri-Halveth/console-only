@@ -1,5 +1,21 @@
 # Console Only · Console Zero
 
+## HALVETH / KORRIDOT 0.8 · begehbare Ereignisse
+
+**[3D-Demo im Browser öffnen](https://juri-halveth.github.io/console-only/)** · [Programmcode](https://github.com/Juri-Halveth/console-only) · [Projektübersicht](https://juri-halveth.github.io/arbeiten/)
+
+![KORRIDOT 0.8 Offline-Demo mit Sternenraum und Ereigniszeitspur](docs/og-korridot.png)
+
+KORRIDOT macht **aufgezeichnete Software-Versuche räumlich erkundbar**. Ein 3D-Modellkorridor zeigt Ereignismarkierungen, Zeitpunkte und verknüpfte Belege. Die öffentliche Demo enthält **nur synthetische Daten**. Sie liest keine lokalen Dateien und startet keine Programme.
+
+**Fliegen:** Rechte Maustaste halten und lenken oder Touch gedrückt ziehen. `W` vorwärts, `S` zurück, `Shift+S` Turbo-Rückflug, `X` bremsen, `Home` zum Eingang; `Leertaste` schaltet den Autopiloten bewusst um. Ein Klick auf Ereignismarkierungen oder auf die Zeitspur zeigt die Details. Sterne sind modellierte 3D-Punkte, keine astronomischen Daten. Für deine eigenen lokalen Belege verwende `./garden live`.
+
+**Architektur:** HALVETH = Projektfamilie; KORRIDOT = räumliche Bedienoberfläche; Console Only / Console Zero = lokaler Baukasten; Garden = ausdrücklich erfasste Knoten und Ausführungsbelege. Keine physikalische Zeitreise, kein autonomer Fremdprozess-Scan und keine Sandbox. Die `.zero/`- und `inbox/`-Daten bleiben lokal und sind von Git ausgeschlossen.
+
+**Aktuelle Prüfung reproduzieren:** `python -B -m unittest discover -s tests -q`, `python -B tools/build_preview.py` und `node --check src/garden_live.js` (Node optional). Die weiter unten erwähnten 33 Tests sind ein **historisches Ergebnis vom 13.11.2026** und kein aktueller Teststand.
+
+---
+
 **Ein lokaler Baukasten, der mit einer Konsole anfängt.** Du setzt einen Keim,
 verzweigst ihn mit Befehlen und siehst seine Ereignisse in einer navigierbaren
 Zeitansicht. Quellen und Modellgespräche sind eigene, ausdrücklich gestartete

@@ -24,6 +24,61 @@ page = page.replace('<script src="/garden_live.js"></script>', '<script src="./p
 page = page.replace("connect-src 'self'", "connect-src 'none'")
 page = page.replace('<div class="legend">',
                     '<p class="lead">Diese Seite startet keine Befehle und verbindet sich mit keinem Dienst. Für deine eigenen Daten: <code>./garden live</code> im geklonten Projekt starten.</p>\n<div class="legend">')
+# HALVETH_PUBLIC_READY_V1: public demo only; never mutate the local live HTML.
+PUBLIC_URL = 'https://juri-halveth.github.io/console-only/'
+PUBLIC_TITLE = 'KORRIDOT | Begehbare Software-Ereignisse · HALVETH'
+PUBLIC_DESC = ('KORRIDOT macht aufgezeichnete Software-Versuche räumlich erkundbar. '
+               'Steuere durch eine interaktive 3D-Demo mit synthetischen Daten, Zeitspur und Quellcode.')
+page = page.replace('<title>Console Only · interaktive Vorschau</title>',
+                    '<title>' + PUBLIC_TITLE + '</title>', 1)
+head_meta = f'''<meta name="description" content="{PUBLIC_DESC}">
+<link rel="canonical" href="{PUBLIC_URL}">
+<meta property="og:type" content="website">
+<meta property="og:title" content="{PUBLIC_TITLE}">
+<meta property="og:description" content="{PUBLIC_DESC}">
+<meta property="og:url" content="{PUBLIC_URL}">
+<meta property="og:image" content="{PUBLIC_URL}og-korridot.png">
+<meta property="og:image:alt" content="KORRIDOT Offline-Demonstration mit 3D-Sternenraum, Ereignisknoten und Zeitspur">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{PUBLIC_TITLE}">
+<meta name="twitter:description" content="{PUBLIC_DESC}">
+<meta name="twitter:image" content="{PUBLIC_URL}og-korridot.png">'''
+page = page.replace('</head>', head_meta + '\n</head>', 1)
+public_css = '''
+.public-ready{border:1px solid #346879;border-radius:19px;padding:clamp(14px,1.8vw,22px);margin:0 0 14px;background:#092234}
+.public-ready h2{color:#e8fff7;font:700 clamp(19px,2.1vw,28px) system-ui,sans-serif;letter-spacing:normal;margin:5px 0 10px;text-transform:none}
+.public-ready p,.public-ready li{color:#bfdce5;font:15px/1.6 system-ui,sans-serif;max-width:850px}
+.public-ready .public-cta{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.public-ready .public-cta a{display:inline-flex;align-items:center;padding:9px 13px;min-height:44px;border:1px solid #549c9f;border-radius:11px;text-decoration:none;font-weight:600;background:#0f3445}
+.public-ready .public-cta a.primary{background:#97f5d9;color:#08242a;border-color:#97f5d9}
+.public-ready .public-cta a:focus-visible{outline:3px solid #fff;outline-offset:2px}
+.public-ready details{margin-top:8px;border-top:1px solid #315363;padding-top:8px}
+.public-ready summary{cursor:pointer;color:#a8f5df;font-weight:700;min-height:44px;display:flex;align-items:center}
+.public-ready ol{padding-left:24px}
+.public-ready .public-proof{font:12px/1.5 ui-monospace,monospace;color:#9fbfc9}
+@media(max-width:650px){.public-ready .public-cta a{flex:1 1 160px;justify-content:center}.public-ready{padding:15px}}
+'''
+page = page.replace('</style>', public_css + '\n</style>', 1)
+intro = '''<section class="public-ready" aria-labelledby="what-is-korridot">
+<p class="micro">HALVETH / KORRIDOT · INTERAKTIVE OFFLINE-DEMO</p>
+<h2 id="what-is-korridot">Software-Versuche räumlich erleben.</h2>
+<p>Fliege durch einen 3D-Zeitkorridor mit anklickbaren Ereignissen, Zeitpunkten und Ergebnissen. Diese Vorschau verwendet ausschließlich erfundene Beispieldaten.</p>
+<nav class="public-cta" aria-label="KORRIDOT Einstiege">
+<a class="primary" href="#korridot-demo">Demo erkunden</a>
+<a href="#so-funktioniert-es">So funktioniert es</a>
+<a href="https://github.com/Juri-Halveth/console-only">Quellcode &amp; Tests</a>
+<a href="https://juri-halveth.github.io/arbeiten/#contact">Projekt anfragen</a>
+</nav>
+<details id="so-funktioniert-es"><summary>20-Sekunden-Start: Wie fliege ich?</summary>
+<ol><li>Rechte Maustaste halten und mit dem Mauszeiger steuern; auf Touch-Geräten gedrückt ziehen.</li>
+<li><strong>W</strong> vorwärts, <strong>S</strong> zurück, <strong>Shift+S</strong> schneller zurück, <strong>X</strong> bremsen.</li>
+<li>Ein Ereignis anklicken oder rechts in der Zeitspur auswählen: Herkunft, Zeit und Ergebnis lesen.</li></ol>
+</details>
+<p class="public-proof">DEMO, KEIN LIVE-ZUGRIFF · Dein eigener Garten startet lokal mit <code>./garden live</code> · X/Y/Z sind Modellkoordinaten, T ist Ereigniszeit.</p>
+</section>
+'''
+page = page.replace('<div class="grid">', intro + '<div id="korridot-demo" class="grid">', 1)
+
 (OUT / 'index.html').write_text(page, encoding='utf-8', newline='\n')
 
 def event(seq, kind, name, parent=None, text=None):
