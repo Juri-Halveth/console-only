@@ -14,6 +14,85 @@
   const motionToggle = document.getElementById('motionToggle');
   const heads = document.getElementById('heads');
   const coords = document.getElementById('coords');
+  // KORRIDOT_HYPERSPEED_V1: view-only speed controls. No Garden events or source timestamps modified.
+  const speedCycleButton = document.getElementById('speedCycle');
+  const warpRampButton = document.getElementById('warpRamp');
+  const speedLevels = Object.freeze([1,2,4,8]);
+  let speedIndex = 0;
+  let warpRampEnabled = true;
+  let cruiseAge = 0;
+  let observerAge = 0;
+  let currentRamp = 1;
+  function rampAt(seconds) { return Math.min(4,1+Math.max(0,seconds-1)*0.12); }
+  function updateSpeedControls() {
+    speedCycleButton.textContent='⚡ Tempo ×'+speedLevels[speedIndex];
+    speedCycleButton.title='Wiedergabe- und Flugtempo: ×1, ×2, ×4, ×8';
+    warpRampButton.textContent=warpRampEnabled?'🚀 WARP AN':'🚀 WARP AUS';
+    warpRampButton.setAttribute('aria-pressed',String(warpRampEnabled));
+    warpRampButton.title='Sanfte Beschleunigung beim anhaltenden freien Flug, maximal zusätzlich ×4';
+  }
+  speedCycleButton.onclick=()=>{speedIndex=(speedIndex+1)%speedLevels.length;updateSpeedControls();redraw();};
+  warpRampButton.onclick=()=>{warpRampEnabled=!warpRampEnabled;cruiseAge=observerAge=0;currentRamp=1;updateSpeedControls();redraw();};
+  updateSpeedControls();
+
+  // BTC_TIMEFLIGHT_V1. A separate temporal lane inside the SAME KORRIDOT scene.
+  // BTC block time and Garden receipt time remain separate values.
+  const btcFlyButton = document.getElementById('btcTimeFlight');
+  let btcModel = null;
+  let btcBlocks = [];
+  let btcRailStatus = 'BTC-Leseansicht wird geladen';
+  let btcPlayable = false;
+  const btcFlight = {active:false, playing:false, elapsed:0, duration:20,
+    orbitYaw:0, orbitPitch:.23, orbitDistance:24, sourceTimeMs:null,
+    from:null, to:null};
+  if (window.location.hostname === '127.0.0.1') {
+    import('./btc_time_rail.mjs').then(module => {
+      btcModel = module;
+      rebuildBitcoinRail();
+      redraw();
+    }).catch(error => {
+      btcRailStatus = 'BTC-Zeitmodul nicht geladen: ' + error.message;
+      console.warn(btcRailStatus);
+    });
+  }
+
+  // The new scene graph uses a separate synthetic model time, never the evidence time T.
+  let dnaModule = null;
+  let dnaScene = null;
+  let dnaModelTime = 0;
+  if (window.location.hostname === '127.0.0.1') {
+    import('./openspace_dna.mjs').then(module => {
+      dnaModule = module;
+      dnaScene = module.compileCatalog(module.DEMO_CATALOG);
+      if (selected) showDetail();
+      redraw();
+    }).catch(error => console.warn('OpenSpace DNA unavailable:', error.message));
+  }
+
+  const fieldPanel = document.getElementById('fieldLab');
+  const fieldSlider = document.getElementById('fieldKappa');
+  const fieldValue = document.getElementById('fieldValue');
+  const fieldStatus = document.getElementById('fieldStatus');
+  let fieldModel = null;
+  let fieldTrajectory = null;
+  function recalculateField() {
+    if (!fieldModel) return;
+    const kappa = Number(fieldSlider.value);
+    if (!Number.isFinite(kappa)) return;
+    const [ax, ay] = fieldModel.centralAcceleration([1, 0], kappa);
+    fieldTrajectory = fieldModel.simulateCentral(kappa);
+    fieldValue.textContent = kappa.toFixed(2).replace('.', ',');
+    fieldStatus.textContent = `aₓ = ${ax.toFixed(6)} · aᵧ = ${ay.toFixed(6)} · ${fieldTrajectory.length} Stützpunkte`;
+    if (view) redraw();
+  }
+  fieldSlider.addEventListener('input', recalculateField);
+  // Public demo stays offline/synthetic. The original model is only served locally.
+  if (window.location.hostname === '127.0.0.1') {
+    import('./field_physics.mjs').then(model => {
+      fieldModel = model;
+      recalculateField();
+    }).catch(() => { fieldStatus.textContent = 'Rechenkern nicht geladen'; });
+  }
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   document.getElementById('runtime').textContent = '● JAVASCRIPT AKTIV · KORRIDOT 0.9';
   const CORE = 'navigation:singularity';
@@ -56,6 +135,43 @@
   let fps = 0, fpsCounter = 0, fpsLast = 0;
   let quality = 1;
   const keys = new Set();
+  // KORRIDOT OBS-01: a distinct scene entity with its own XYZ and local model age.
+  // Event index T is read from the existing timeSlider; it is not wall time.
+  const OBSERVER_KEY = 'observer:obs-01';
+  const observer = {id:'OBS-01', x:0, y:0, z:0, seconds:0, ready:false, visible:true};
+  let observerDetail = null;
+  function observerHome() {
+    const z = cameraZ + 43;
+    const center = bend(z);
+    observer.x = center.x + 3.5;
+    observer.y = center.y + 0.5;
+    observer.z = z;
+    observer.seconds = 0;
+    observer.ready = true;
+    observer.visible = true;
+  }
+  function observerInfo() {
+    return `X ${observer.x.toFixed(3)} · Y ${observer.y.toFixed(3)} · Z ${observer.z.toFixed(3)}` +
+      `\nT ${Number(slider.value)}/${ordered.length} (Garden-Belegindex) · τ ${observer.seconds.toFixed(2)} s (Modell)` +
+      (btcFlight.active && Number.isFinite(btcFlight.sourceTimeMs) && btcModel
+        ? `\nBTC Headerzeit ${btcModel.formatBitcoinUTC(btcFlight.sourceTimeMs)}` +
+          `\nSegment H${btcFlight.from} → H${btcFlight.to} · Quelle: Garden-BTC-Import`
+        : '');
+  }
+  function observerTick(dt) {
+    if (!observer.ready || !dt) return;
+    observer.seconds += dt;
+    const freeKeys=['i','j','k','l','u','o'];
+    const flying=freeKeys.some(key=>keys.has(key));
+    observerAge=flying && warpRampEnabled ? Math.min(60,observerAge+dt) : 0;
+    const observerRamp=flying && warpRampEnabled ? rampAt(observerAge) : 1;
+    const speed=(keys.has('Shift') ? 22 : 10)*speedLevels[speedIndex]*observerRamp;
+    observer.x += ((keys.has('l') ? 1 : 0) - (keys.has('j') ? 1 : 0)) * speed * dt;
+    observer.y += ((keys.has('u') ? 1 : 0) - (keys.has('o') ? 1 : 0)) * speed * dt;
+    observer.z += ((keys.has('i') ? 1 : 0) - (keys.has('k') ? 1 : 0)) * speed * dt;
+    observer.z = clamp(observer.z, 1, maxTravel() + 240);
+  }
+
   const hashName = str => {
     let hash = 2166136261;
     for (const c of String(str)) hash = Math.imul(hash ^ c.codePointAt(0), 16777619);
@@ -111,6 +227,17 @@
   }
   function showDetail() {
     detail.replaceChildren();
+    fieldPanel.hidden = true;
+    observerDetail = null;
+    if (selected === OBSERVER_KEY) {
+      line(detail, 'SIMULIERTE RAUMENTITÄT · NICHT BELEG', 'small');
+      line(detail, 'OBS-01 · Mini-Beobachter', 'h3');
+      observerDetail = line(detail, observerInfo(), 'pre');
+      line(detail, 'I/K vor/zurück · J/L seitlich · U/O hoch/runter. Shift beschleunigt.');
+      line(detail, 'B: vor der Kamera positionieren · N: sichtbar/unsichtbar.');
+      line(detail, 'Koordinaten in KORRIDOT-Modell-u, nicht astronomische Messwerte.');
+      return;
+    }
     if (selected === CORE) {
       line(detail, 'NAVIGATION · RAUMGEOMETRIE', 'small');
       line(detail, 'Singularität / Horizont', 'h3');
@@ -126,6 +253,7 @@
     const row = ordered.find(x => x.key === selected);
     if (!row) { selected = null; showDetail(); return; }
     const e = row.entry;
+    fieldPanel.hidden = !(e.name === 'Funktionsatlas' || e.node === 'Funktionsatlas');
     line(detail, prefix(row), 'small');
     line(detail, label(row), 'h3');
     line(detail, 'UTC ' + e.at);
@@ -133,6 +261,25 @@
     const index = ordered.indexOf(row);
     line(detail, 'Raumzeitpunkt T' + (index + 1) + ' · Z ' + (FIRST + STEP * index));
     if (e.kind === 'branch') line(detail, 'Herkunft: ' + e.parent);
+    if (e.kind === 'branch' && e.name === 'OpenSpace DNA') {
+      line(detail, 'SYNTHETISCHE SZENENPROBE · Elternknoten + Zeit-Keyframes + distanzabhaengige Sichtbarkeit.', 'small');
+      line(detail, 'Modellzeit ist NICHT Ereigniszeit. Keine NASA-Positionsdaten.');
+      const modelTime = line(detail, `MODELL t = ${dnaModelTime} / 100`, 'p');
+      const timelineControl = document.createElement('input');
+      timelineControl.type = 'range';
+      timelineControl.min = '0'; timelineControl.max = '100';
+      timelineControl.step = '1'; timelineControl.value = String(dnaModelTime);
+      timelineControl.setAttribute('aria-label', 'OpenSpace DNA: synthetische Modellzeit');
+      timelineControl.style.width = '100%';
+      timelineControl.addEventListener('input', () => {
+        dnaModelTime = Number(timelineControl.value);
+        modelTime.textContent = `MODELL t = ${dnaModelTime} / 100`;
+        redraw();
+      });
+      detail.append(timelineControl);
+      line(detail, dnaScene ? 'Katalog geladen: 6 Objekte · Quelle: SYNTHETISCH · Einheiten: Modell-u' :
+        'Katalog wird geladen …');
+    }
     if (e.kind === 'note') line(detail, e.text);
     if (e.kind === 'portal') {
       line(detail, 'Nur auf ausdrücklichen Klick öffnet sich die gespeicherte externe Website.');
@@ -186,6 +333,16 @@
              y: c.y + Math.sin(twist) * r * .84, z };
   }
   function camera() {
+    // Orbit camera can freely go around the pilot; the regular camera remains intact.
+    if (btcFlight.active && observer.ready) {
+      const d=btcFlight.orbitDistance, cp=Math.cos(btcFlight.orbitPitch);
+      const x=observer.x+Math.sin(btcFlight.orbitYaw)*d*cp;
+      const y=observer.y+Math.sin(btcFlight.orbitPitch)*d;
+      const z=observer.z-Math.cos(btcFlight.orbitYaw)*d*cp;
+      return {x,y,z,
+        yaw:Math.atan2(observer.x-x,observer.z-z),
+        pitch:Math.atan2(observer.y-y,Math.hypot(observer.x-x,observer.z-z)),roll:0};
+    }
     const c = bend(cameraZ), next = bend(cameraZ + .3);
     return { x: c.x + shipX, y: c.y + shipY, z: cameraZ,
       yaw: Math.atan2(next.x - c.x, .3) + yawOffset,
@@ -325,6 +482,24 @@
     pathThrough(pts);
     ctx.strokeStyle='rgba(125,224,236,.31)';ctx.lineWidth=1.3;ctx.stroke();
   }
+  // Receipt date belongs to the event. Never derived from the current clock.
+  // Europe/Berlin handles historical MEZ/MESZ offsets; cache avoids per-frame parsing.
+  const eventStampFormatter = new Intl.DateTimeFormat('de-DE', {
+    timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+    timeZoneName: 'short'
+  });
+  const eventStampCache = new Map();
+  function eventTimeLabel(at) {
+    if (eventStampCache.has(at)) return eventStampCache.get(at);
+    const time = new Date(at);
+    if (!Number.isFinite(time.getTime())) return 'Zeit nicht verfügbar';
+    const parts = Object.fromEntries(eventStampFormatter.formatToParts(time)
+      .filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+    const label = `${parts.day}.${parts.month}.${parts.year} · ${parts.hour}:${parts.minute}:${parts.second} ${parts.timeZoneName}`;
+    eventStampCache.set(at, label);
+    return label;
+  }
   function drawBeacon(row, index) {
     const loc=place(row,index), p=project(loc);
     if (!p || p.x < -180 || p.x > width+180 || p.y < -120 || p.y > height+120) return;
@@ -342,21 +517,46 @@
     ctx.fillStyle='#081b2d';ctx.fill();
     ctx.strokeStyle=focus?'#fff':col;ctx.lineWidth=focus?3:2.2;ctx.stroke();
     ctx.fillStyle=col;ctx.beginPath();ctx.arc(p.x,p.y,Math.max(2.5,radius*.27),0,TAU);ctx.fill();
-    if (p.depth < 110 && (width >= 600 || p.depth < 49 || selected === row.key)) {
-      const title=label(row);
-      const font=clamp(10+85/p.depth,10,14);
-      ctx.font=`600 ${font}px system-ui, sans-serif`;
-      const labelW=clamp(ctx.measureText(title).width+20,55,205);
-      const left=clamp(p.x-labelW/2,3,width-labelW-3), top=p.y+radius+7;
-      if (top<height-26 && top>5) {
-        ctx.fillStyle=focus?'rgba(34,85,95,.96)':'rgba(8,28,43,.85)';
-        ctx.strokeStyle=focus?'#d3fff6':'rgba(122,190,205,.54)';
-        ctx.lineWidth=1;
-        ctx.beginPath();ctx.roundRect(left,top,labelW,24,9);ctx.fill();ctx.stroke();
-        ctx.fillStyle='#e9fffa';ctx.textAlign='center';ctx.textBaseline='middle';
-        ctx.fillText(title.length>22?title.slice(0,21)+'…':title,left+labelW/2,top+12,labelW-13);
-        targets.push({key:row.key,x:left+labelW/2,y:top+12,r:Math.max(labelW/2,16),
-          rect:{left,top,right:left+labelW,bottom:top+24},depth:p.depth});
+    // Billboards are screen-space text anchored to each projected 3D event body.
+    // No standalone clock HUD or painted label boxes.
+    if (p.depth < 140 && (width >= 600 || p.depth < 49 || focus)) {
+      const title = label(row);
+      const stamp = eventTimeLabel(row.entry.at);
+      const leftSide = p.x > width * .62;
+      const side = leftSide ? -1 : 1;
+      const fontSize = clamp(10.5 + 75 / p.depth, 11, 14);
+      const textX = p.x + side * (radius + 16);
+      const textY = p.y - 2;
+      const available = leftSide ? textX - 7 : width - textX - 7;
+      const textWidth = Math.min(230, available);
+      if (textWidth > 78 && textY > 18 && textY + 22 < height) {
+        const alpha = focus ? 1 : clamp((165 - p.depth) / 70, .53, 1);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = focus ? '#d5fff3' : 'rgba(108,230,221,.5)';
+        ctx.beginPath();
+        ctx.moveTo(p.x + side * radius * .58, p.y);
+        ctx.lineTo(textX - side * 5, textY + 1);
+        ctx.stroke();
+        ctx.textAlign = leftSide ? 'right' : 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.font = `500 ${fontSize}px ui-monospace,Consolas,monospace`;
+        ctx.lineWidth = 2.6;
+        ctx.strokeStyle = 'rgba(2,9,20,.92)';
+        ctx.strokeText(title, textX, textY, textWidth);
+        ctx.fillStyle = focus ? '#ffffff' : '#dcfff8';
+        ctx.fillText(title, textX, textY, textWidth);
+        ctx.font = '300 10px ui-monospace,Consolas,monospace';
+        ctx.strokeText(stamp, textX, textY + 15, textWidth);
+        ctx.fillStyle = focus ? '#b8fdef' : '#94cdd3';
+        ctx.fillText(stamp, textX, textY + 15, textWidth);
+        ctx.restore();
+        const labelLeft = leftSide ? textX - textWidth : textX;
+        targets.push({key:row.key,x:labelLeft+textWidth/2,y:textY+7,
+          r:Math.max(18,textWidth/2),
+          rect:{left:labelLeft,top:textY-14,right:labelLeft+textWidth,bottom:textY+21},
+          depth:p.depth});
       }
     }
     targets.push({key:row.key,x:p.x,y:p.y,r:Math.max(19,radius+9),depth:p.depth});
@@ -376,16 +576,216 @@
     if (s>=10) ctx.fillText('HORIZONT',p.x,p.y-s*2);
     targets.push({key:CORE,x:p.x,y:p.y,r:Math.max(24,s*1.6),depth:p.depth});
   }
+  // Model t is not a new receipt. Curve is anchored beside the EXISTING
+  // Funktionsatlas branch in KORRIDOT's projected 3D model space.
+  function drawFieldTrajectory() {
+    if (!fieldTrajectory || fieldPanel.hidden) return;
+    const index = ordered.findIndex(row =>
+      row.entry.kind === 'branch' && row.entry.name === 'Funktionsatlas');
+    if (index < 0 || Number(slider.value) <= index) return;
+    const anchor = place(ordered[index], index);
+    const pts = fieldTrajectory.filter((_, i) => i % 4 === 0).map(point => project({
+      x: anchor.x + (point.x - 1) * 2.7,
+      y: anchor.y + point.y * 2.7,
+      z: anchor.z + 3 + point.t * 9
+    }));
+    pathThrough(pts);
+    ctx.strokeStyle = '#9bffdc';
+    ctx.lineWidth = 2.4;
+    ctx.stroke();
+  }
+  // OpenSpace-inspired scene graph: its own parent transforms and time samples,
+  // projected into KORRIDOT's EXISTING camera. No second canvas or data upload.
+  function drawOpenSpaceDNA() {
+    if (!dnaModule || !dnaScene) return;
+    const index = ordered.findIndex(r =>
+      r.entry.kind === 'branch' && r.entry.name === 'OpenSpace DNA');
+    if (index < 0 || selected !== ordered[index].key || Number(slider.value) <= index) return;
+    const anchor = place(ordered[index], index);
+    const objects = dnaModule.snapshotScene(dnaScene, dnaModelTime, [0, 0, 0],
+      {maxDistance: 50, minRelativeRadius: 0.005}).filter(o => o.visible);
+    const projections = new Map();
+    for (const object of objects) {
+      const local = object.relative;
+      const projection = project({
+        x: anchor.x + local[0] * 1.2,
+        y: anchor.y + local[1] * 1.2,
+        z: anchor.z + 8 + local[2] * 1.2
+      });
+      if (projection) projections.set(object.id, projection);
+    }
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(133,239,221,.42)';
+    for (const object of objects) {
+      const p = projections.get(object.id), parent = projections.get(object.parent);
+      if (!p || !parent) continue;
+      ctx.beginPath(); ctx.moveTo(parent.x, parent.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+    }
+    for (const object of objects) {
+      const p = projections.get(object.id);
+      if (!p || p.x < 0 || p.x > width || p.y < 0 || p.y > height) continue;
+      const radius = clamp(p.scale * object.radius * .25, 3, 11);
+      ctx.fillStyle = '#a7ffe8';
+      ctx.beginPath(); ctx.arc(p.x, p.y, radius, 0, TAU); ctx.fill();
+      if (p.depth < 115) {
+        ctx.font = '300 10px ui-monospace,monospace';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#c8f4f0';
+        ctx.fillText(object.label + ' · t' + dnaModelTime, p.x + radius + 7, p.y, 130);
+      }
+      targets.push({key:ordered[index].key,x:p.x,y:p.y,r:Math.max(radius + 8, 15),depth:p.depth});
+    }
+    ctx.restore();
+  }
+  function drawObserver() {
+    if (!observer.visible || !observer.ready) return;
+    const p = project(observer);
+    if (!p || p.x < -85 || p.x > width+85 || p.y < -70 || p.y > height+70) return;
+    const s = clamp(p.scale * .48, 3.5, 14);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    // Tiny flying observer. Original vector silhouette, no external sprite or asset.
+    ctx.rotate(Math.sin(observer.seconds * 1.4) * .065);
+    ctx.fillStyle = '#8a74dd'; // miniature cloak trails behind the pilot
+    ctx.beginPath();ctx.moveTo(-s*.3,-s*.2);
+    ctx.lineTo(-s*1.55,s*.9);ctx.lineTo(-s*.8,-s*1.0);ctx.closePath();ctx.fill();
+    ctx.lineWidth = Math.max(1,s*.16);
+    ctx.strokeStyle = '#061a2d';
+    ctx.fillStyle = '#7be8cf';
+    ctx.beginPath();ctx.ellipse(0,s*.12,s*.52,s*.8,-.22,0,TAU);ctx.fill();ctx.stroke();
+    ctx.strokeStyle = '#7be8cf';ctx.lineCap='round';
+    for (const a of [-1,1]) {
+      ctx.beginPath();ctx.moveTo(a*s*.28,s*.48);ctx.lineTo(a*s*.56,s*1.2);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(a*s*.32,-s*.25);ctx.lineTo(a*s*.80,-s*.52);ctx.stroke();
+    }
+    ctx.fillStyle = '#f0d2aa';ctx.strokeStyle='#061a2d';ctx.lineWidth=Math.max(1,s*.13);
+    ctx.beginPath();ctx.arc(0,-s*.95,s*.54,0,TAU);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#052638';
+    ctx.beginPath();ctx.arc(s*.18,-s*.97,Math.max(.8,s*.08),0,TAU);ctx.fill();
+    ctx.restore();
+    // Ultra-thin camera-projected text, attached to the observer, not the HUD.
+    const left = p.x + s*1.3+8 > width-210 ? p.x-s*1.3-218 : p.x+s*1.3+8;
+    const top = Math.max(24,Math.min(height-36,p.y-s));
+    const textLines = ['BEOBACHTER · OBS-01',
+      `X ${observer.x.toFixed(3)}  Y ${observer.y.toFixed(3)}  Z ${observer.z.toFixed(3)}`,
+      `T ${Number(slider.value)}/${ordered.length} · τ ${observer.seconds.toFixed(2)}s`];
+    ctx.save();ctx.textAlign='left';ctx.textBaseline='alphabetic';
+    ctx.font='500 10px ui-monospace,Consolas,monospace';
+    ctx.lineJoin='round';ctx.lineWidth=2.5;
+    const alpha=clamp((180-p.depth)/130,.48,1);
+    ctx.globalAlpha=alpha;
+    for (let i=0; i<textLines.length; i++) {
+      const y=top+i*13;
+      ctx.strokeStyle='rgba(2,10,24,.95)';ctx.strokeText(textLines[i],left,y,215);
+      ctx.fillStyle=i===0?'#b8fff0':i===1?'#d8edf3':'#8bd6ce';
+      ctx.fillText(textLines[i],left,y,215);
+    }
+    ctx.restore();
+    targets.push({key:OBSERVER_KEY,x:p.x,y:p.y,r:Math.max(18,s*2.2),depth:p.depth});
+  }
+  function rebuildBitcoinRail() {
+    if (!btcModel) return;
+    const out=btcModel.extractBitcoinRail(ordered);
+    btcBlocks=out.blocks.map(row=>({...row,position:place(ordered[row.index],row.index)}));
+    btcPlayable=out.playable;
+    btcRailStatus=out.reason;
+    if (btcFlight.active && !btcPlayable) {
+      btcFlight.active=false; btcFlight.playing=false;
+    }
+    updateBitcoinFlightButton();
+  }
+  function updateBitcoinFlightButton() {
+    if (!btcFlyButton) return;
+    btcFlyButton.disabled=!btcPlayable;
+    btcFlyButton.textContent=btcFlight.active?'■ BTC-Flug verlassen':
+      '▶ BTC-Zeitflug' + (btcBlocks.length ? ` (${btcBlocks.length})` : '');
+    btcFlyButton.title=btcRailStatus;
+  }
+  function btcTick(dt) {
+    if (!btcFlight.active || !btcModel || !btcPlayable) return;
+    const first=btcBlocks[0].timeMs, last=btcBlocks[btcBlocks.length-1].timeMs;
+    if (btcFlight.playing) {
+      btcFlight.elapsed=Math.min(btcFlight.duration,btcFlight.elapsed+dt*speedLevels[speedIndex]);
+      if (btcFlight.elapsed >= btcFlight.duration) btcFlight.playing=false;
+    }
+    const timeMs=first+(last-first)*btcFlight.elapsed/btcFlight.duration;
+    const p=btcModel.sampleBitcoinRail(btcBlocks,timeMs);
+    if (!p) {btcFlight.active=false;btcFlight.playing=false;updateBitcoinFlightButton();return;}
+    observer.x=p.x;observer.y=p.y;observer.z=p.z;
+    observer.visible=true;observer.ready=true;observer.seconds=btcFlight.elapsed;
+    btcFlight.sourceTimeMs=p.timeMs;
+    btcFlight.from=p.from;btcFlight.to=p.to;
+    // cameraZ only controls depth culling/star cells. The view itself comes from camera().
+    const orbit=camera();
+    cameraZ=clamp(orbit.z,0,maxTravel());
+  }
+  function drawBitcoinRail() {
+    if (!btcPlayable || !btcModel) return;
+    const visible=btcBlocks.filter(b=>b.index<Number(slider.value));
+    if (visible.length < 1) return;
+    ctx.save();
+    ctx.lineWidth=2.2;
+    ctx.strokeStyle='rgba(255,198,109,.78)';
+    for(let i=1;i<visible.length;i++) {
+      const a=visible[i-1].position,b=visible[i].position, segment=[];
+      for(let k=0;k<=18;k++) {
+        const f=k/18;
+        segment.push(project({x:mix(a.x,b.x,f),y:mix(a.y,b.y,f),z:mix(a.z,b.z,f)}));
+      }
+      pathThrough(segment);
+      ctx.stroke();
+    }
+    for(const b of visible) {
+      const p=project(b.position);
+      if (!p || p.x<0 || p.x>width || p.y<0 || p.y>height) continue;
+      const s=clamp(p.scale*.16,3,10);
+      ctx.fillStyle='#ffcd81';
+      ctx.beginPath();ctx.arc(p.x,p.y,s,0,TAU);ctx.fill();
+      ctx.strokeStyle='#382412';ctx.lineWidth=1;ctx.stroke();
+      if(btcFlight.active && p.depth<145) {
+        ctx.font='600 10px ui-monospace,monospace';
+        ctx.textAlign='left';ctx.fillStyle='#ffe4b8';
+        ctx.fillText('BTC H'+b.height,p.x+s+7,p.y-6,95);
+      }
+    }
+    ctx.restore();
+  }
+  function startBitcoinFlight() {
+    if (!btcPlayable || !btcModel) return;
+    btcFlight.active=true;btcFlight.playing=true;btcFlight.elapsed=0;
+    btcFlight.orbitYaw=0;btcFlight.orbitPitch=.23;
+    observer.visible=true;observer.ready=true;
+    motion=false;flightSpeed=0;wheelImpulse=0;thrustHeld=false;cruiseAge=0;currentRamp=1;
+    reverseHeld=false;brakeHeld=false;targetZ=null;
+    auto=false;follow.setAttribute('aria-pressed','false');follow.textContent='○ Live folgen';
+    slider.value=String(ordered.length);
+    selected=OBSERVER_KEY;
+    btcTick(0);showDetail();updateMotionButton();updateBitcoinFlightButton();drawScene();
+    canvas.focus({preventScroll:true});
+  }
+  function stopBitcoinFlight() {
+    btcFlight.active=false;btcFlight.playing=false;
+    updateBitcoinFlightButton();updateMotionButton();
+  }
+  btcFlyButton.onclick=()=>{
+    if(btcFlight.active) {stopBitcoinFlight();drawScene();}
+    else startBitcoinFlight();
+  };
   function drawScene() {
     if (!ctx) return;
     setCanvasSize();
     ctx.setTransform(resolution,0,0,resolution,0,0);
     view = camera(); targets=[];
+    if (!observer.ready) observerHome();
     drawBackdrop();
     const visible=ordered.slice(0,Number(slider.value));
     const drawable=[];
     drawFilaments();
     drawStars();
+    drawFieldTrajectory();
+    drawBitcoinRail();
+    drawOpenSpaceDNA();
     const points=visible.map((row,i)=>place(row,i));
     const indexByName=new Map();
     visible.forEach((row,i)=>{if(row.entry.kind==='seed'||row.entry.kind==='branch') indexByName.set(row.entry.name,i);});
@@ -400,10 +800,14 @@
     }
     const coreZ=Math.max(198,zFor(ordered.length-1)+60);
     drawable.push({z:coreZ,draw:drawCore});
+    if (observer.visible) drawable.push({z:observer.z,draw:drawObserver});
     drawable.sort((a,b)=>b.z-a.z);
     for (const d of drawable) d.draw();
+    if (observerDetail) observerDetail.textContent = observerInfo();
     const behind=ordered.reduce((n,row,i)=>n+(zFor(i)<cameraZ?1:0),0);
-    coords.textContent=`X ${shipX.toFixed(1)} · Y ${shipY.toFixed(1)} · Z ${cameraZ.toFixed(1)} · ${Math.round(flightSpeed)} u/s · ${fps||'…'} FPS · T ${behind}/${ordered.length}`;
+    const speedText=btcFlight.active ? `BTC ×${speedLevels[speedIndex]}` :
+      `×${speedLevels[speedIndex]} · WARP ${warpRampEnabled?currentRamp.toFixed(1)+'×':'AUS'}`;
+    coords.textContent=`X ${shipX.toFixed(1)} · Y ${shipY.toFixed(1)} · Z ${cameraZ.toFixed(1)} · ${Math.round(flightSpeed)} u/s · ${speedText} · ${fps||'…'} FPS · T ${behind}/${ordered.length}`;
     timeLabel.textContent=slider.value+' / '+ordered.length;
     timeLabel.title=Number(slider.value)?ordered[Number(slider.value)-1].at:'';
   }
@@ -421,6 +825,7 @@
     });
   }
   function focusRow(index) {
+    if (btcFlight.active) stopBitcoinFlight();
     if (index<0||index>=ordered.length) return;
     auto=false;motion=false;updateMotionButton();
     follow.setAttribute('aria-pressed','false');follow.textContent='○ Live folgen';
@@ -433,6 +838,7 @@
     focusRow(Number(slider.value)-1);
   });
   follow.onclick=()=>{
+    if (btcFlight.active) stopBitcoinFlight();
     auto=true;follow.setAttribute('aria-pressed','true');follow.textContent='● Live folgen';
     slider.value=String(ordered.length); targetZ=null;drawScene();
   };
@@ -470,6 +876,11 @@
     button.addEventListener('blur',release);
     return release;
   }
+  document.getElementById('observerHome').onclick=()=>{
+    if (btcFlight.active) stopBitcoinFlight();
+    observerHome();observer.visible=true;selected=OBSERVER_KEY;showDetail();drawScene();
+    canvas.focus({preventScroll:true});
+  };
   const releaseReverse=bindHold('reverseHold',value=>{reverseHeld=value;});
   const releaseBrake=bindHold('brakeHold',value=>{brakeHeld=value;});
   document.getElementById('zoomIn').onclick=()=>{lens=clamp(lens*1.15,.55,1.9);drawScene();};
@@ -525,7 +936,8 @@
     const p=localPoint(event);
     // Right-held mouse and touch both control live thrust + direction.
     const mode=event.pointerType==='touch'||event.button===2?'pilot':'look';
-    pointerStart={id:event.pointerId,x:p.x,y:p.y,startYaw:targetYaw,startPitch:targetPitch,mode,at:performance.now()};
+    pointerStart={id:event.pointerId,x:p.x,y:p.y,startYaw:targetYaw,startPitch:targetPitch,
+      startBtcYaw:btcFlight.orbitYaw,startBtcPitch:btcFlight.orbitPitch,mode,at:performance.now()};
     dragged=false;
     if(mode==='pilot'){
       thrustHeld=true;
@@ -541,6 +953,10 @@
       const dx=p.x-pointerStart.x,dy=p.y-pointerStart.y;
       if(Math.hypot(dx,dy)>6)dragged=true;
       if(pointerStart.mode==='pilot') steerTo(p);
+      else if(dragged && btcFlight.active){
+        btcFlight.orbitYaw=pointerStart.startBtcYaw-dx*.007;
+        btcFlight.orbitPitch=clamp(pointerStart.startBtcPitch+dy*.005,-1.27,1.27);
+      }
       else if(dragged){
         targetYaw=clamp(pointerStart.startYaw-dx*.0022,-.85,.85);
         targetPitch=clamp(pointerStart.startPitch+dy*.0019,-.58,.58);
@@ -560,13 +976,16 @@
     // Wheel contributes a decaying velocity impulse instead of stepping cameraZ.
     wheelImpulse=clamp(wheelImpulse+Math.sign(event.deltaY)*7,-25,25);
   },{passive:false});
-  const allowed=new Set(['w','s','a','d','q','e','x','Shift','ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ','Home','Enter']);
+  const allowed=new Set(['w','s','a','d','q','e','x','i','j','k','l','u','o','b','n','p','Shift','ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ','Home','Enter']);
   canvas.addEventListener('keydown',event=>{
     const key=event.key.length===1&&event.key!==' '?event.key.toLowerCase():event.key;
     if(!allowed.has(key))return;
     event.preventDefault();keys.add(key);
     if(event.repeat)return;
-    if(key==='Home'){
+    if(key==='b'){if(btcFlight.active)stopBitcoinFlight();observerHome();selected=OBSERVER_KEY;showDetail();}
+    else if(key==='p'&&btcFlight.active){btcFlight.playing=!btcFlight.playing;}
+    else if(key==='n'){observer.visible=!observer.visible;}
+    else if(key==='Home'){if(btcFlight.active)stopBitcoinFlight();
       cameraZ=0;shipX=shipY=shipVX=shipVY=flightSpeed=wheelImpulse=0;
       yawOffset=pitchOffset=targetYaw=targetPitch=roll=0;targetZ=null;motion=false;
     }else if(key===' '){motion=!motion;targetZ=null;}
@@ -594,6 +1013,22 @@
     const dt=lastFrame?clamp((time-lastFrame)/1000,0,.05):0;
     lastFrame=time;
     if(document.hidden){requestAnimationFrame(animate);return;}
+    if(btcFlight.active) {
+      // The pilot follows real source-time intervals at an accelerated playback rate.
+      // Orbit keys are decoupled from the existing normal-flight steering.
+      const yr=(keys.has('ArrowRight')?1:0)-(keys.has('ArrowLeft')?1:0);
+      const pr=(keys.has('ArrowUp')?1:0)-(keys.has('ArrowDown')?1:0);
+      btcFlight.orbitYaw+=yr*dt*1.8;
+      btcFlight.orbitPitch=clamp(btcFlight.orbitPitch+pr*dt*1.2,-1.27,1.27);
+      btcTick(dt);
+      fpsCounter++;
+      if(!fpsLast)fpsLast=time;
+      if(time-fpsLast>=700){fps=Math.round(fpsCounter*1000/(time-fpsLast));fpsCounter=0;fpsLast=time;}
+      phase+=dt*350;
+      drawScene();
+      requestAnimationFrame(animate);
+      return;
+    }
     // dt-based input integration is independent of monitor refresh rate.
     const damping=1-Math.exp(-dt*7.5);
     const keyYaw=(keys.has('ArrowRight')?1:0)-(keys.has('ArrowLeft')?1:0);
@@ -609,7 +1044,11 @@
     const braking=brakeHeld||keys.has('x');
     // Reverse wins over held forward thrust. Fast braking crosses 0 promptly.
     // No auto-cruise after release unless the user explicitly enabled autopilot.
-    const wanted=braking?0:reverse?(boost?-78:-55):forward?(boost?53:36):motion?12:0;
+    const cruising=!braking && !reverse && (forward || motion);
+    cruiseAge=cruising && warpRampEnabled ? Math.min(60,cruiseAge+dt) : 0;
+    currentRamp=cruising && warpRampEnabled ? rampAt(cruiseAge) : 1;
+    const baseWanted=braking?0:reverse?(boost?-78:-55):forward?(boost?53:36):motion?12:0;
+    const wanted=baseWanted*speedLevels[speedIndex]*currentRamp;
     const reversing=(flightSpeed>0&&wanted<0)||(flightSpeed<0&&wanted>0);
     const response=braking?14:reversing?11:wanted?5.3:9;
     flightSpeed+=(wanted-flightSpeed)*(1-Math.exp(-dt*response));
@@ -641,6 +1080,7 @@
     shipY=clamp(shipY+shipVY*dt,-6,6);
     if(Math.abs(shipX)>=7.2)shipVX=0;
     if(Math.abs(shipY)>=6)shipVY=0;
+    observerTick(dt);
     if(motion||thrustHeld||deformation||Math.abs(flightSpeed)>.1)phase+=dt*1000;
     fpsCounter++;
     if(!fpsLast)fpsLast=time;
@@ -658,6 +1098,15 @@
   requestAnimationFrame(animate);
   // A read-only geometry probe for local reproducible interaction tests.
   window.__korridotProbe=Object.freeze({
+    hyperspeed:()=>Object.freeze({preset:speedLevels[speedIndex],warpEnabled:warpRampEnabled,
+      cruiseAge,observerAge,ramp:currentRamp,btcPlayback:btcFlight.active,btcElapsed:btcFlight.elapsed}),
+    btc:()=>Object.freeze({active:btcFlight.active,playing:btcFlight.playing,
+      blocks:btcBlocks.map(b=>({height:b.height,hash:b.hash,previous:b.previous,time:b.time,
+        x:b.position.x,y:b.position.y,z:b.position.z})),
+      playable:btcPlayable,reason:btcRailStatus,elapsed:btcFlight.elapsed,
+      sourceTimeMs:btcFlight.sourceTimeMs,orbitYaw:btcFlight.orbitYaw,orbitPitch:btcFlight.orbitPitch}),
+    observer:()=>Object.freeze({id:observer.id,x:observer.x,y:observer.y,z:observer.z,
+      t:observer.seconds,T:Number(slider.value),visible:observer.visible,ready:observer.ready}),
     snapshot:()=>({z:cameraZ,x:shipX,y:shipY,speed:flightSpeed,thrust:thrustHeld,
       reverse:reverseHeld,brake:brakeHeld,autopilot:motion,
       yaw:yawOffset,pitch:pitchOffset,fps,quality,
@@ -675,6 +1124,7 @@
       connection.textContent='● LOKAL LIVE · 2 S';connection.classList.remove('off');
       if(!snapshot||snapshot.gardenHead!==data.gardenHead||snapshot.runHead!==data.runHead||snapshot.jobHead!==data.jobHead){
         snapshot=data;ordered=entryList(data);
+        rebuildBitcoinRail();
         slider.max=String(ordered.length);
         if(auto)slider.value=String(ordered.length);
         else slider.value=String(Math.min(Number(slider.value),ordered.length));
