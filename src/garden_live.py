@@ -154,14 +154,17 @@ def run_command(root, node, command, read, store):
 
 
 def state(root, read, store):
+    from garden_jobs import read_jobs
     events = read(root)
     runs = read_runs(root, store)
+    jobs = read_jobs(root, store)
     nodes = {e['name'] for e in events if e['kind'] in ('seed', 'branch')}
     if any(e['node'] not in nodes for e in runs):
         raise ValueError('Ausführungsbeleg verweist auf fehlenden Knoten')
     return {'schema': 'console-zero.garden-live.v1', 'garden': events, 'runs': runs,
-            'at': now(), 'gardenHead': events[-1]['hash'] if events else ZERO,
-            'runHead': runs[-1]['hash'] if runs else ZERO}
+            'jobs': jobs, 'at': now(), 'gardenHead': events[-1]['hash'] if events else ZERO,
+            'runHead': runs[-1]['hash'] if runs else ZERO,
+            'jobHead': jobs[-1]['hash'] if jobs else ZERO}
 
 
 def serve(root, read, store, open_browser=True):

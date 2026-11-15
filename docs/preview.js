@@ -15,7 +15,7 @@
   const heads = document.getElementById('heads');
   const coords = document.getElementById('coords');
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  document.getElementById('runtime').textContent = '● JAVASCRIPT AKTIV · KORRIDOT 0.8';
+  document.getElementById('runtime').textContent = '● JAVASCRIPT AKTIV · KORRIDOT 0.9';
   const CORE = 'navigation:singularity';
   const TAU = Math.PI * 2;
   const STEP = 20;
@@ -81,7 +81,8 @@
   function entryList(data) {
     const rows = [
       ...data.garden.map(e => ({ key: 'g-' + e.seq, at: e.at, source: 'GARTEN', entry: e })),
-      ...data.runs.map(e => ({ key: 'r-' + e.seq, at: e.at, source: 'LAUF', entry: e }))
+      ...data.runs.map(e => ({ key: 'r-' + e.seq, at: e.at, source: 'LAUF', entry: e })),
+      ...(data.jobs || []).map(e => ({ key: 'j-' + e.seq, at: e.at, source: 'AUFTRAG', entry: e }))
     ];
     rows.sort((a, b) => a.at.localeCompare(b.at) || a.source.localeCompare(b.source) || a.entry.seq - b.entry.seq);
     return rows;
@@ -92,10 +93,14 @@
     if (e.kind === 'branch') return 'Ast · ' + e.name;
     if (e.kind === 'note') return 'Beschreibung · ' + e.name;
     if (e.kind === 'portal') return 'Portal · ' + e.name;
+    if (e.kind === 'job-start') return 'Auftrag · ' + e.node;
+    if (e.kind === 'job-progress') return 'Fortschritt · ' + e.elapsedSeconds + 's';
+    if (e.kind === 'job-end') return 'Auftrag · ' + (e.result === 'EXITED' && e.exitCode === 0 ? 'OK' : e.result);
     if (e.kind === 'run-start') return 'Start · ' + e.argv[0];
     return e.result === 'EXITED' && e.exitCode === 0 ? 'Ergebnis · OK' : 'Ergebnis · ' + e.result;
   }
   function prefix(row) {
+    if (row.entry.kind.startsWith('job-')) return 'LANGAUFTRAG';
     return row.entry.kind.startsWith('run-') ? 'AUSFÜHRUNG' : row.entry.kind.toUpperCase();
   }
   function line(parent, value, tag = 'p') {
@@ -135,6 +140,12 @@
       a.href = e.url; a.rel = 'noopener noreferrer'; a.target = '_blank';
       a.textContent = 'HALVETH NETZ betreten ↗';
       detail.append(a);
+    }
+    if (e.kind.startsWith('job-')) {
+      line(detail, 'Auftrag: ' + e.node + ' · ID ' + e.jobId);
+      if (e.kind === 'job-start') line(detail, 'Programm: ' + e.program + ' · Limit: ' + e.timeoutSeconds + 's');
+      if (e.kind === 'job-progress') line(detail, 'Beobachtet: ' + e.elapsedSeconds + 's · Ausgabevolumen: ' + e.outputBytes + ' Bytes (Inhalt bleibt lokal)');
+      if (e.kind === 'job-end') line(detail, 'Ergebnis: ' + e.result + ' · Exit: ' + e.exitCode + ' · Zeit: ' + e.elapsedSeconds + 's · Log-SHA-256: ' + e.logHash);
     }
     if (e.kind === 'run-start') {
       line(detail, 'Erfasster Prozessstart. Die Sichtbahn ist keine laufende Terminalausgabe.');
@@ -298,7 +309,7 @@
   }
   function place(row, index) {
     const z = zFor(index);
-    const key = row.source === 'LAUF' ? row.entry.node : row.entry.name;
+    const key = row.source === 'LAUF' || row.source === 'AUFTRAG' ? row.entry.node : row.entry.name;
     const id = hashName(key);
     const angle = (id % 628) / 100 + index * 1.53;
     return surface(z, angle, .48);
@@ -318,8 +329,9 @@
     const loc=place(row,index), p=project(loc);
     if (!p || p.x < -180 || p.x > width+180 || p.y < -120 || p.y > height+120) return;
     const type = row.entry.kind;
-    const good = type === 'run-end' && row.entry.result === 'EXITED' && row.entry.exitCode === 0;
-    const col = type === 'run-start' ? '#ffc78a' : type === 'run-end' ? good ? '#85ffce' : '#ff7f99'
+    const good = (type === 'run-end' || type === 'job-end') && row.entry.result === 'EXITED' && row.entry.exitCode === 0;
+    const col = type === 'job-progress' ? '#91b8ff' : type === 'job-start' ? '#ffc78a' : type === 'job-end' ? good ? '#85ffce' : '#ff7f99'
+      : type === 'run-start' ? '#ffc78a' : type === 'run-end' ? good ? '#85ffce' : '#ff7f99'
       : type === 'portal' ? '#e1aeff' : type === 'note' ? '#91b8ff' : '#91f3dd';
     const radius = clamp(p.scale * (type === 'seed' || type === 'branch' ? .37 : .25), 5, 25);
     const focus = selected === row.key;

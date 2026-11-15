@@ -69,7 +69,7 @@ class GardenLiveTests(unittest.TestCase):
             self.seed(root)
             copied = root / 'src'
             copied.mkdir()
-            for file in ('garden.py', 'garden_live.py', 'garden_live.html', 'garden_live.js'):
+            for file in ('garden.py', 'garden_live.py', 'garden_live.html', 'garden_live.js', 'garden_jobs.py'):
                 shutil.copy2(source / file, copied / file)
             cmd = [sys.executable, '-B', str(copied / 'garden.py'), 'live']
             env = {**os.environ, 'CONSOLE_ZERO_NO_BROWSER': '1'}

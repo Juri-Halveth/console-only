@@ -14,8 +14,8 @@ JS = (ROOT / 'src/garden_live.js').read_text(encoding='utf-8')
 
 class KorridotUIStaticTests(unittest.TestCase):
     def test_version_local_service_and_existing_loopback_contract(self):
-        self.assertIn('JAVASCRIPT WARTET · KORRIDOT 0.8', HTML)
-        self.assertIn('JAVASCRIPT AKTIV · KORRIDOT 0.8', JS)
+        self.assertIn('JAVASCRIPT WARTET · KORRIDOT 0.9', HTML)
+        self.assertIn('JAVASCRIPT AKTIV · KORRIDOT 0.9', JS)
         self.assertIn('<script src="/garden_live.js"></script>', HTML)
         self.assertIn("fetch('/state'", JS)
         self.assertIn('setInterval(poll,2000)', JS)  # existing 403/loopback test

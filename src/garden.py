@@ -345,6 +345,9 @@ def main(argv=None, root=None):
     p = sub.add_parser('describe'); p.add_argument('node'); p.add_argument('text')
     p = sub.add_parser('portal'); p.add_argument('node'); p.add_argument('destination', choices=['universum'])
     p = sub.add_parser('run'); p.add_argument('node'); p.add_argument('command', nargs=argparse.REMAINDER)
+    p = sub.add_parser('job'); p.add_argument('--timeout', type=int, default=900); p.add_argument('node'); p.add_argument('command', nargs=argparse.REMAINDER)
+    p = sub.add_parser('cancel'); p.add_argument('job_id')
+    sub.add_parser('jobs')
     sub.add_parser('live')
     sub.add_parser('status'); sub.add_parser('verify'); sub.add_parser('render'); sub.add_parser('open')
     args = parser.parse_args(argv)
@@ -359,6 +362,15 @@ def main(argv=None, root=None):
             from garden_live import run_command
             command = args.command[1:] if args.command[:1] == ['--'] else args.command
             return run_command(root, args.node, command, read, store)
+        elif args.action == 'job':
+            from garden_jobs import start_job
+            return start_job(root, args.node, args.command, args.timeout, read, store)
+        elif args.action == 'cancel':
+            from garden_jobs import cancel_job
+            cancel_job(root, args.job_id, store)
+        elif args.action == 'jobs':
+            from garden_jobs import status_jobs
+            status_jobs(root, store)
         elif args.action == 'live':
             from garden_live import serve
             serve(root, read, store)
