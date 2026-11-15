@@ -176,19 +176,24 @@ def serve(root, read, store, open_browser=True):
             if self.headers.get('Host') != f'127.0.0.1:{self.server.server_port}':
                 self.send_error(403)
                 return
-            if self.path not in ('/', '/garden_live.js', '/state'):
+            if self.path not in ('/', '/garden_live.js', '/field_physics.mjs', '/openspace_dna.mjs', '/btc_time_rail.mjs', '/state'):
                 self.send_error(404)
                 return
             try:
                 content = (page if self.path == '/' else script if self.path == '/garden_live.js'
-                           else packed(state(root, read, store)))
+                           else (Path(__file__).parent / 'field_physics.mjs').read_bytes()
+                           if self.path == '/field_physics.mjs' else
+                           (Path(__file__).parent / 'openspace_dna.mjs').read_bytes()
+                           if self.path == '/openspace_dna.mjs' else
+                           (Path(__file__).parent / 'btc_time_rail.mjs').read_bytes()
+                           if self.path == '/btc_time_rail.mjs' else packed(state(root, read, store)))
             except (ValueError, OSError, json.JSONDecodeError) as exc:
                 content = packed({'error': str(exc)})
                 self.send_response(409)
             else:
                 self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8' if self.path == '/state'
-                             else 'text/javascript; charset=utf-8' if self.path.endswith('.js')
+                             else 'text/javascript; charset=utf-8' if self.path.endswith(('.js', '.mjs'))
                              else 'text/html; charset=utf-8')
             self.send_header('Content-Length', str(len(content)))
             self.send_header('Cache-Control', 'no-store')
