@@ -77,7 +77,8 @@ intro = '''<section class="public-ready" aria-labelledby="what-is-korridot">
 <p class="public-proof">DEMO, KEIN LIVE-ZUGRIFF · Dein eigener Garten startet lokal mit <code>./garden live</code> · X/Y/Z sind Modellkoordinaten, T ist Ereigniszeit.</p>
 </section>
 '''
-page = page.replace('<div class="grid">', intro + '<div id="korridot-demo" class="grid">', 1)
+page = page.replace('<div class="grid">', '<div id="korridot-demo" class="grid">', 1)
+page = page.replace('<section id="consoleWorkshop"', intro + '<section id="consoleWorkshop"', 1)
 
 (OUT / 'index.html').write_text(page, encoding='utf-8', newline='\n')
 
@@ -124,4 +125,15 @@ script = script[:start] + (
 if "fetch(" in script or 'setInterval(' in script:
     raise ValueError('Preview darf keine Netzabfrage oder Polling enthalten')
 (OUT / 'preview.js').write_text(script, encoding='utf-8', newline='\n')
+# COSMOS pass is purely synthetic and contains no network or Garden access.
+import shutil
+shutil.copyfile(ROOT / 'src/cosmos_renderer.mjs', OUT / 'cosmos_renderer.mjs')
 print('docs/index.html und docs/preview.js aus lokalen Vorlagen erzeugt')
+
+# KORRIDOT_SPACEFLIGHT_V1 shared CPU/GPU optics.
+import shutil
+shutil.copyfile(ROOT / 'src/space_optics.mjs', OUT / 'space_optics.mjs')
+
+# Local module imports must also work in the self-contained synthetic preview.
+for module in ('field_physics.mjs', 'openspace_dna.mjs', 'btc_time_rail.mjs', 'simulation_models.mjs', 'particle-dynamics.js', 'reference-physics.js', 'models.js', 'material-engine.js', 'material-model.js', 'material-view.js'):
+    shutil.copyfile(ROOT / 'src' / module, OUT / module)

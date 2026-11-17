@@ -171,22 +171,27 @@ def serve(root, read, store, open_browser=True):
     state(root, read, store)
     page = (Path(__file__).parent / 'garden_live.html').read_bytes()
     script = (Path(__file__).parent / 'garden_live.js').read_bytes()
+    static_model_paths = {'/'+name: Path(__file__).parent/name for name in ('simulation_models.mjs','particle-dynamics.js','reference-physics.js','models.js','material-engine.js','material-model.js','material-view.js')}
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             if self.headers.get('Host') != f'127.0.0.1:{self.server.server_port}':
                 self.send_error(403)
                 return
-            if self.path not in ('/', '/garden_live.js', '/field_physics.mjs', '/openspace_dna.mjs', '/btc_time_rail.mjs', '/state'):
+            if self.path not in ('/', *static_model_paths, '/garden_live.js', '/field_physics.mjs', '/openspace_dna.mjs', '/btc_time_rail.mjs', '/cosmos_renderer.mjs', '/space_optics.mjs', '/state'):
                 self.send_error(404)
                 return
             try:
-                content = (page if self.path == '/' else script if self.path == '/garden_live.js'
+                content = (static_model_paths[self.path].read_bytes() if self.path in static_model_paths else page if self.path == '/' else script if self.path == '/garden_live.js'
                            else (Path(__file__).parent / 'field_physics.mjs').read_bytes()
                            if self.path == '/field_physics.mjs' else
                            (Path(__file__).parent / 'openspace_dna.mjs').read_bytes()
                            if self.path == '/openspace_dna.mjs' else
                            (Path(__file__).parent / 'btc_time_rail.mjs').read_bytes()
-                           if self.path == '/btc_time_rail.mjs' else packed(state(root, read, store)))
+                           if self.path == '/btc_time_rail.mjs' else
+                           (Path(__file__).parent / 'cosmos_renderer.mjs').read_bytes()
+                           if self.path == '/cosmos_renderer.mjs' else
+                           (Path(__file__).parent / 'space_optics.mjs').read_bytes()
+                           if self.path == '/space_optics.mjs' else packed(state(root, read, store)))
             except (ValueError, OSError, json.JSONDecodeError) as exc:
                 content = packed({'error': str(exc)})
                 self.send_response(409)
