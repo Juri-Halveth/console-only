@@ -1,0 +1,44 @@
+name: Console checks
+
+on:
+  pull_request:
+  push:
+    branches: [main, codex/material-channels-20261117]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify offline preview and source bindings
+        run: python -B tools/build_preview.py
+      - name: Python integration tests
+        run: python -B -m unittest discover -s tests -p 'test_*.py' -q
+      - name: Node solver and UI regression tests
+        run: node --experimental-vm-modules --test tests/*.test.mjs tests/*.test.cjs
+      - name: Install isolated browser test runtime
+        run: |
+          npm install --prefix "$RUNNER_TEMP/halveth-browser" --no-save --ignore-scripts playwright@1.62.1
+          node "$RUNNER_TEMP/halveth-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Chromium interaction and checkpoint import tests
+        env:
+          HALVETH_PLAYWRIGHT: ${{ runner.temp }}/halveth-browser/node_modules/playwright
+          REVIEW_LABEL: chromium-ci
+        run: node tests/material-review-browser.cjs
+      - name: Save browser measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: console-browser-measurements
+          path: evidence/review/PROBES_chromium-ci.json
+          if-no-files-found: warn

@@ -1,0 +1,8 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import '../src/particle-dynamics.js';
+function run(hz,seconds=10,damping=.04){const model=HALVETHParticles.create({seed:20261117});let debt=0;for(let frame=0;frame<hz*seconds;frame++){debt+=1/hz;let work=0;while(debt+1e-12>=1/90&&work++<240){model.step(1/90,{damping});debt-=1/90;if(debt<0&&debt>-1e-10)debt=0;}}return model.snapshot();}
+test('movement preset has actual motion for 10 model seconds and no invented event',()=>{const state=run(60);assert.equal(state.time,10);assert.equal(state.status,'RUNNING');assert.equal(state.steps,900);assert.equal(state.parameters.damping,.04);assert.equal(state.seed,20261117);assert.notEqual(state.bodies[0].x,-1.2);assert.deepEqual(state.events,[]);assert.equal(state.burst,null);});
+test('30/60/120/240 display rates feed identical fixed-step solver trajectory',()=>{const reference=run(60);for(const hz of [30,120,240])assert.deepEqual(run(hz),reference);});
+test('historical .12 preset stays available as input and finite boundary preserves motion',()=>{const state=run(60,10,.12);assert.equal(state.status,'MODEL_LIMIT');assert.equal(state.events.length,1);assert.equal(state.events[0].id,'PAIR_LIMIT_001');assert.equal(state.burst,null);assert(state.bodies.every(b=>b.active&&Math.hypot(b.vx,b.vy)>0));assert(Math.abs(state.diagnostics.separation-.18)<1e-12);});
+test('seed parameter explicit zero damping and frequency are retained',()=>{const model=HALVETHParticles.create({seed:20261117});model.step(1/90,{damping:0,frequency:0});const state=model.snapshot();assert.equal(state.parameters.damping,0);assert.equal(state.parameters.frequency,0);assert.equal(state.seed,20261117);});

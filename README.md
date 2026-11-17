@@ -1,5 +1,52 @@
 # Console Only · Console Zero
 
+
+## Materialintegration · 17.11.2026
+
+Die neue Standardansicht zeigt 960 bewegliche Materialzellen mit eigenen
+Positionen, Geschwindigkeiten, Orientierungen und Winkelgeschwindigkeiten.
+Nachbarkopplung erzeugt Kräfte und Drehmomente aus einem nematischen
+Paarpotential. Die ursprünglichen expliziten Kern-/Medium- und Speicherregeln
+bleiben erhalten. Die Kernmarkierungen sind zunächst ausgeschaltet.
+
+Vier Hauptaktionen bleiben sichtbar: **Pause/Weiter, Neu starten, Aufnehmen,
+Mehr**. Die Werkstatt enthält die alten Modelle, Feld-/Zell-/Orientierungs-
+und Flugansicht, Blau/Gold oder drei RGB-Anzeigeklassen, Symbolgröße,
+Kamerazoom, JSON-Wiederherstellung und 4K-PNG. Zoom, Farbe und Symbolgröße
+verändern keine Masse oder Kräfte. Die RGB-Klassen bezeichnen keine realen
+Protonen, Elektronen oder Neutronen. Das Modell ist dimensionslos; es ist
+nicht auf atomare Abstände, Temperatur oder spontane Masseerzeugung kalibriert.
+
+`src/material-engine.js`, `src/material-model.js` und `src/material-view.js`
+werden bytegleich auch in der Forschungswebsite verwendet. JSON enthält
+stabile Material-IDs, tatsächliche θ/ω-Werte, vollständigen Rechenzustand,
+Eingaben, Zeitguthaben und Quellenbindungen. Die gespeicherten exakten
+IEEE-754-Werte erhalten auch negatives Null. Ein Rechenfehler erhält den
+letzten gültigen Zustand und löst keine automatische Wiederholung aus.
+
+Die vorhandene Bedienung bleibt der Einstieg:
+
+```bash
+python -B tools/build_preview.py
+./garden live
+```
+
+Die statische `docs/`-Vorschau enthält ausschließlich synthetische Beispiele.
+Eine Veröffentlichung dieses Branches ist von einer Aktualisierung der
+GitHub-Pages-Livefassung getrennt. Die Pfadlizenz bleibt [MIT](LICENSE);
+externe Projekte behalten ihre jeweiligen Rechte.
+
+Reproduzierbare vorhandene Prüfungen:
+
+```bash
+node --experimental-vm-modules --test tests/*.test.mjs
+node --test tests/material-kernel.test.cjs
+python -B -m unittest discover -s tests -p 'test_*.py'
+```
+
+Die aktuelle begrenzte Abnahme steht in `docs/MATERIAL_ACCEPTANCE.json`.
+Ergebnisse früherer Abschnitte sind historische Prüfstände.
+
 ## HALVETH / KORRIDOT 0.8 · begehbare Ereignisse
 
 **[3D-Demo im Browser öffnen](https://juri-halveth.github.io/console-only/)** · [Programmcode](https://github.com/Juri-Halveth/console-only) · [Projektübersicht](https://juri-halveth.github.io/arbeiten/)
@@ -131,3 +178,11 @@ und geprüft sind.
 
 Der Code dieses Repositories steht unter [MIT](LICENSE). Externe Projekte,
 auf die Dokumentation oder Portale verweisen, behalten ihre eigenen Rechte.
+
+## Doppelacht im Flugraum
+
+In der Vorschau dieses Branches öffnet die Abfrage `?modell=doppelacht` direkt die 3D-Szene. Unter **Mehr** stehen vier Kameras, Zellverfolgung, Kopplung, JSON und 4K bereit. [Modell und Prüftoleranzen](DOPPELACHT.md).
+
+[GG24-Förderberichte im Korridor](https://juri-halveth.github.io/console-only/?spur=gg24) öffnet nach Veröffentlichung dieser Fassung zwei datierte Berichtsstände und eine anhand von zwei Logs geprüfte Übertragung von 2.000 DAI auf OP Mainnet. Für die jeweilige lokale Vorschau hängt man `?spur=gg24` an die Startadresse an. Die Zeitspur bindet die öffentlichen Quellen und zeigt ihre ausgewiesenen USD-Beträge. [Lichtpunkt und Kamerabedienung](DOPPELACHT.md#lichtpunkt-und-rundumblick).
+
+[Förderberichte, Blöcke und IPFS-Titel selbst nachprüfen](tools/gg24/README.md).

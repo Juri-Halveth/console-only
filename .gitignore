@@ -3,3 +3,6 @@ inbox/*
 !inbox/.gitkeep
 __pycache__/
 *.pyc
+
+# Reproducible, synthetic local test measurements.
+evidence/
