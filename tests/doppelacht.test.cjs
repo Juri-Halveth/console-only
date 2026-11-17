@@ -73,6 +73,40 @@ test('time refinement, deterministic continuation, and rejected altered packet',
   a.step(.18);b.step(.18);same(a.snapshot(),b.snapshot());const before=b.snapshot();saved.materialCells[7].z+=.01;
   assert.throws(()=>b.restore(saved));same(b.snapshot(),before);
 });
+test('async restore yields, retains exact continuation and rejects altered packets atomically',async()=>{
+  const live=D.create({count:32,layout:'shell'});live.step(12.003);
+  const saved=structuredClone(live.snapshot()),copy=D.create(saved.configuration),before=copy.snapshot();
+  let timerTurns=0,progress=[];
+  const timer=setInterval(()=>timerTurns++,0);
+  try{
+    await copy.restoreAsync(saved,{onProgress:p=>{
+      progress.push(p);same(copy.snapshot(),before);
+    }});
+  }finally{clearInterval(timer);}
+  assert.ok(timerTurns>1,'ordinary timers must execute during seed verification');
+  assert.equal(progress[0].tick,0);assert.equal(progress.at(-1).tick,saved.tick);
+  same(copy.snapshot(),saved);live.step(.18);copy.step(.18);same(copy.snapshot(),live.snapshot());
+  const invalid=structuredClone(saved);invalid.materialCells[0].x+=.1;
+  const retained=copy.snapshot();await assert.rejects(copy.restoreAsync(invalid),/replay differs/);same(copy.snapshot(),retained);
+});
+test('async restore can be cancelled without installing a partial state',async()=>{
+  const live=D.create({count:16});live.step(8);
+  const copy=D.create({count:16}),before=copy.snapshot(),controller=new AbortController();
+  await assert.rejects(copy.restoreAsync(live.snapshot(),{signal:controller.signal,onProgress:p=>{
+    if(p.tick>=120)controller.abort();
+  }}),{name:'AbortError'});
+  same(copy.snapshot(),before);
+});
+test('async verification owns its input and accepts the unchanged predecessor equations',async()=>{
+  const live=D.create({count:16,layout:'shell'});live.step(2.001);
+  const saved=live.snapshot(),expected=structuredClone(saved),copy=D.create(saved.configuration);
+  const restoring=copy.restoreAsync(saved);
+  saved.materialCells[0].x+=100;
+  await restoring;same(copy.snapshot(),expected);
+  expected.source='b67b0a71998812de55bdb2b068275b5835959f9fff4f597ca601471a1ff44e85';
+  await copy.restoreAsync(expected);
+  same(copy.snapshot(),live.snapshot());
+});
 test('free evolution measured against the initial finite tubes',()=>{
   const m=D.create(),curve=Array.from({length:4096},(_,i)=>{const s=i*2*Math.PI/4096;return [4.2*Math.sin(s),1.8*Math.sin(2*s)];});
   measurements.shape=[];

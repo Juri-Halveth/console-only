@@ -22,5 +22,6 @@ test('same frozen 3D source IDs survive four bound camera operators',()=>{
   receipt.push({camera,images});
  }
  assert.equal(JSON.stringify(source),before);
- fs.writeFileSync('../evidence/console-four-camera.json',JSON.stringify({scope:'synthetic fixed 3D coordinates, four actual camera transforms, identity optics; not physical-world validation',source,receipt},null,2));
+ const evidence=new URL('../evidence/',import.meta.url);fs.mkdirSync(evidence,{recursive:true});
+ fs.writeFileSync(new URL('console-four-camera.json',evidence),JSON.stringify({scope:'synthetic fixed 3D coordinates, four actual camera transforms, identity optics; not physical-world validation',source,receipt},null,2));
 });

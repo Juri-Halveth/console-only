@@ -9,7 +9,7 @@ import vm from 'node:vm';
 import {pathToFileURL} from 'node:url';
 
 const project = path.resolve(process.env.KORRIDOT_ROOT || '.');
-const sourceFile = path.join(project, 'src/garden_live.js');
+const sourceFile = process.env.KORRIDOT_LIVE_SOURCE ? path.resolve(process.env.KORRIDOT_LIVE_SOURCE) : path.join(project, 'src/garden_live.js');
 const source = fs.readFileSync(sourceFile, 'utf8');
 const noop = () => {};
 const syntheticState = () => ({
@@ -21,7 +21,7 @@ const syntheticState = () => ({
   runs:[], jobs:[], gardenHead:'synthetic-head', runHead:'', jobHead:''
 });
 
-async function runtime() {
+async function runtime({search='',instrument=false}={}) {
   const listeners = new Map(), nodes = new Map(), imports = [], network = [];
   const ctx = new Proxy({
     createRadialGradient: () => ({addColorStop:noop}),
@@ -56,12 +56,12 @@ async function runtime() {
   const requestAnimationFrame = fn => (nextFrame=fn,1);
   const window = {devicePixelRatio:1,innerWidth:1050,innerHeight:620,
     matchMedia:()=>({matches:false,addEventListener:noop}),
-    location:{hostname:'127.0.0.1'},
+    location:{hostname:'127.0.0.1',search},
     addEventListener:(name,callback)=>listen('window',name,callback),
     requestAnimationFrame};
   const state = syntheticState(), before = JSON.stringify(state), warnings=[];
   const sandbox = {document,window,console:{...console,warn:(...v)=>warnings.push(v.map(String).join(' '))},
-    Math,Date,Array,Map,Set,Number,String,Object,Promise,Uint8Array,Uint32Array,Float32Array,
+    Math,Date,Array,Map,Set,Number,String,Object,Promise,Uint8Array,Uint32Array,Float32Array,AbortController,URLSearchParams,structuredClone,
     navigator:{hardwareConcurrency:4},setInterval:noop,clearInterval:noop,setTimeout,clearTimeout,
     performance:{now:()=>clock},requestAnimationFrame,cancelAnimationFrame:noop,
     fetch:async(url,options={})=>{
@@ -70,7 +70,10 @@ async function runtime() {
       assert.equal(options.method||'GET','GET','Renderer attempted write');
       return {ok:true,json:async()=>state};
     }};
-  vm.runInNewContext(source, sandbox, {filename:sourceFile,
+  const hook=`window.__importProbe={payload:simulationPayload,pending:()=>!!pendingImport,
+    advance:seconds=>{simulationModel.step(seconds);drawScene();},
+    follow:id=>{materialView.followId=id;followOrigin=null;spatialCamera('oblique');}};`;
+  vm.runInNewContext(instrument?source.replace('window.__korridotProbe=Object.freeze({',hook+'window.__korridotProbe=Object.freeze({'):source, sandbox, {filename:sourceFile,
     importModuleDynamically:specifier=>{
       if (!/^\.\/[a-z0-9_-]+\.mjs$/i.test(specifier)) throw Error(`Nonlocal runtime import ${specifier}`);
       const promise=import(pathToFileURL(path.join(project,'src',specifier)).href);
@@ -86,7 +89,7 @@ async function runtime() {
   function emit(target,type,properties={}) {
     const event={preventDefault:noop,stopPropagation:noop,repeat:false,target:get(target),
       currentTarget:get(target),...properties};
-    for (const callback of listeners.get(`${target}:${type}`)||[]) callback(event);
+    return Promise.all((listeners.get(`${target}:${type}`)||[]).map(callback=>callback(event)));
   }
   function key(key,type='keydown') {emit('world',type,{key,code:key.length===1?`Key${key.toUpperCase()}`:key});}
   function step(dt=1/60) {clock+=dt*1000;nextFrame(clock);}
@@ -107,7 +110,7 @@ async function runtime() {
       for(const axis of ['x','y','depth'])assert.ok(Number.isFinite(target[axis]),`Nonfinite target ${axis}`);
     return state;
   };
-  return {probe,get,key,emit,step,advance,finite,document,warnings,
+  return {probe,get,key,emit,step,advance,finite,document,warnings,importProbe:window.__importProbe,
     unchanged:()=>assert.equal(JSON.stringify(state),before,'Renderer mutated synthetic Garden state'),
     network};
 }
@@ -116,6 +119,48 @@ test('spaceflight initializes with finite camera and local read-only state',asyn
   const r=await runtime();r.finite();r.unchanged();
   assert.ok(r.network.length>=1,'Synthetic state not ingested');
   assert.equal(typeof r.probe.spaceflight().evidenceVisible,'boolean');
+});
+
+function importPacket(r,packet){
+  const input=r.get('simulationImportFile'),text=JSON.stringify(packet);
+  input.value='fixture.json';input.files=[{size:text.length,text:async()=>text}];
+  return r.emit('simulationImportFile','change');
+}
+
+test('3D import restores a followed cell camera without a stale tracking delta',async()=>{
+  const r=await runtime({search:'?modell=doppelacht',instrument:true});
+  r.importProbe.follow('M00000');
+  const saved=structuredClone(r.importProbe.payload());
+  r.importProbe.advance(2);
+  assert.notDeepEqual(structuredClone(r.importProbe.payload().observation.camera),saved.observation.camera);
+  await importPacket(r,saved);r.probe.redraw();
+  const restored=r.importProbe.payload();
+  assert.deepEqual(structuredClone(restored.observation.camera),saved.observation.camera);
+  assert.equal(restored.observation.view.followId,'M00000');
+  assert.equal(restored.clock.playing,false);assert.equal(restored.model.tick,saved.model.tick);
+});
+
+test('3D import preserves the current scene while yielding and cancels on restart',async()=>{
+  const r=await runtime({search:'?modell=doppelacht',instrument:true});
+  r.importProbe.advance(4);const saved=structuredClone(r.importProbe.payload());
+  const loading=importPacket(r,saved);
+  for(let i=0;i<6;i++)await Promise.resolve();
+  assert.ok(r.importProbe.pending());assert.match(r.get('watchStatus').textContent,/wird geprüft/);
+  await r.emit('watchReset','click');await loading;
+  assert.equal(r.importProbe.pending(),false);assert.equal(r.get('simulationImportFile').value,'');
+  assert.equal(r.importProbe.payload().model.tick,0);
+  assert.doesNotMatch(r.get('watchStatus').textContent,/wird geprüft|Import abgelehnt/);
+});
+
+test('a newer import supersedes pending replay without the old cleanup clearing it',async()=>{
+  const r=await runtime({search:'?modell=doppelacht',instrument:true});
+  const fresh=structuredClone(r.importProbe.payload());
+  r.importProbe.advance(4);const old=structuredClone(r.importProbe.payload());
+  const first=importPacket(r,old);for(let i=0;i<6;i++)await Promise.resolve();
+  const second=importPacket(r,fresh);await Promise.all([first,second]);
+  assert.equal(r.importProbe.pending(),false);assert.equal(r.get('simulationImportFile').value,'');
+  assert.equal(r.importProbe.payload().model.tick,0);
+  assert.deepEqual(structuredClone(r.importProbe.payload().observation.camera),fresh.observation.camera);
 });
 
 test('W+Shift passes the old 240-unit end without teleporting back',async()=>{

@@ -151,6 +151,11 @@
   const simulationSpeed=document.getElementById('simulationSpeed');
   let simulationAPI=null,simulationModel=null,simulationMode=fundingRail?'off':window.location?.search && new URLSearchParams(window.location.search).get('modell')==='doppelacht'?'doppelacht':'material';
   let simulationError='',simulationNotice='',watchStarted=false;
+  let pendingImport=null;
+  function cancelImport(){
+    if(pendingImport){pendingImport.abort();const input=document.getElementById('simulationImportFile');if(input)input.value='';}
+    pendingImport=null;
+  }
   // Existing solver preset: only damping changes from .12 to .04; fixed step remains 1/90.
   const simulationPreset=Object.freeze({id:'movement-first-20261117',seed:20261117,damping:.04});
   let simulationPlaying=!reducedMotion,simulationDebt=0,simulationLast=null;
@@ -296,6 +301,7 @@
     });
   }
   function resetSimulation(){
+    cancelImport();
     simulationDebt=0;simulationLast=null;
     simulationError='';simulationNotice='';
     simulationModel=simulationMode==='off'||!simulationAPI?null:simulationAPI.create(simulationMode,simulationMode==='doppelacht'?spatialConfig:simulationMode==='material'?materialStartConfig():simulationMode==='experimental'?{seed:simulationPreset.seed}:{});
@@ -370,12 +376,15 @@
   document.getElementById('simulationImport')?.addEventListener('click',()=>importFile?.click());
   importFile?.addEventListener('change',async()=>{
     const file=importFile.files?.[0];if(!file)return;
+    cancelImport();
+    const request=new AbortController();pendingImport=request;
     try{
       if(file.size>5000000)throw Error('Material-JSON überschreitet 5 MB');
       const doc=JSON.parse(await file.text());
+      if(request.signal.aborted)return;
       const packet=simulationAPI.spatial.packetFrom(doc);
       if(packet){
-        const next=simulationAPI.spatial.create(packet.configuration);next.restore(packet);
+        const next=simulationAPI.spatial.create(packet.configuration);
         const native=doc.schema==='halveth.console-doppelacht/1';
         const observation=native?doc.observation:null,restoredView=observation?.view,clock=native?doc.clock:{credit:0,speed:1,step:1/120};
         if(!clock||clock.step!==1/120||!Number.isFinite(clock.credit)||clock.credit<0||clock.credit>3600||
@@ -383,12 +392,17 @@
         if(native&&(!observation||!restoredView||!['rods','field','cells','flight'].includes(restoredView.mode)||
            !['bluegold','rgb'].includes(restoredView.colorMode)||!Number.isFinite(restoredView.symbolScale)||restoredView.symbolScale<.4||restoredView.symbolScale>2||
            (Object.hasOwn(restoredView,'distance')&&(!simulationAPI.spatialView.validDistance(restoredView.distance)||packet.configuration.layout!=='shell'))||
-           (restoredView.followId!=null&&!packet.materialCells.some(c=>c.id===restoredView.followId))||
+           (restoredView.followId!=null&&!packet.materialCells?.some(c=>c.id===restoredView.followId))||
            !validCamera(observation)))throw Error('Ungültige 3D-Ansicht');
+        await next.restoreAsync(packet,{signal:request.signal,onProgress:({tick,total})=>{
+          simulationNotice='3D-Import wird geprüft · '+tick+' / '+total+' Schritte';simulationStatus();
+        }});
+        if(request.signal.aborted)return;
         simulationMode='doppelacht';simulationModel=next;spatialConfig={...packet.configuration};simulationDebt=clock.credit;
         simulationSpeed.value=String(clock.speed);simulationLast=null;simulationPlaying=false;simulationError='';simulationNotice='';watchStarted=true;
         approach.stop();delete materialView.distance;
         Object.assign(materialView,{mode:'rods',colorMode:'bluegold',symbolScale:1,followId:null},restoredView??{});
+        followOrigin=null;
         if(native)restoreCamera(observation);else spatialCamera('oblique');
         document.getElementById('materialView').value=materialView.mode;document.getElementById('materialSize').value=String(materialView.symbolScale);
         syncRecordingState();syncMaterialControls();simulationStatus();drawScene();return;
@@ -411,8 +425,8 @@
       simulationModel=next;simulationMode='material';simulationSelect.value='material';simulationDebt=credit;simulationLast=null;simulationSpeed.value=String(speed);simulationPlaying=false;simulationError='';simulationNotice=hasPending?'':'Älterer Export: keine vorgemerkten Eingaben enthalten; zuletzt berechnete Werte übernommen';watchStarted=true;syncRecordingState();
       delete materialView.followId;restoreCamera(doc.observation);syncMaterialControls();
       simulationStatus();drawScene();
-    }catch(error){simulationNotice='Import abgelehnt, bisheriger Zustand erhalten: '+error.message;simulationStatus();}
-    finally{importFile.value='';}
+    }catch(error){if(!request.signal.aborted){simulationNotice='Import abgelehnt, bisheriger Zustand erhalten: '+error.message;simulationStatus();}}
+    finally{if(pendingImport===request){pendingImport=null;importFile.value='';}}
   });
   function simulationTick(time){
     if(document.hidden){simulationLast=null;return;}

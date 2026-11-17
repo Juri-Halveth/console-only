@@ -1,4 +1,4 @@
-/* Eight source-bound review regressions. Synthetic, loopback-only browser fixtures. */
+/* Source-bound review regressions. Synthetic, loopback-only browser fixtures. */
 const fs=require('fs'),path=require('path'),http=require('http'),assert=require('assert/strict');
 const ROOT=path.resolve(__dirname,'..'),OUT=path.resolve(process.env.HALVETH_TEST_OUTPUT||path.join(ROOT,'evidence/review'));fs.mkdirSync(OUT,{recursive:true});
 const pw=require(process.env.HALVETH_PLAYWRIGHT||'playwright'),label=process.env.REVIEW_LABEL||'current';
@@ -11,7 +11,8 @@ const consoleHook=`globalThis.__review={tick:simulationTick,payload:simulationPa
 };`;
 const studioHook=`globalThis.__reviewStudio={camera:x=>Object.assign(camera,x)};`;
 function serve(req,res){let rel=decodeURIComponent(req.url.split('?')[0]),root,local;if(rel==='/state'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({garden:[],runs:[],jobs:[],gardenHead:'fixture',runHead:'fixture',jobHead:'fixture'}));}if(rel.startsWith('/console/')){root=path.join(rootConsole,'docs');local=rel.slice('/console'.length);}else if(rel.startsWith('/web/')){root=rootWeb;local=rel.slice('/web'.length);}else{res.writeHead(404);return res.end();}const f=path.resolve(root,'.'+local);if(!f.startsWith(root+path.sep)||!fs.existsSync(f)||!fs.statSync(f).isFile()){res.writeHead(404);return res.end();}let data=fs.readFileSync(f);if(f.endsWith('preview.js'))data=Buffer.from(data.toString().replace('window.__korridotProbe=Object.freeze({',consoleHook+'window.__korridotProbe=Object.freeze({'));if(f.endsWith(path.sep+'studio.js'))data=Buffer.from(data.toString().replace('})();',studioHook+'})();'));res.setHeader('Content-Type',f.endsWith('.js')||f.endsWith('.mjs')?'text/javascript':f.endsWith('.css')?'text/css':f.endsWith('.json')?'application/json':'text/html;charset=utf-8');res.end(data);}
-async function main(){const result={label,scope:'reported Console integration cases, synthetic loopback fixtures; no remote code execution or product stores',checks:[]},server=http.createServer(serve);await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin=`http://127.0.0.1:${server.address().port}`,browser=await pw.chromium.launch({headless:true,executablePath:process.env.HALVETH_BROWSER||'C:/Program Files/Google/Chrome/Application/chrome.exe'});result.browser=browser.version();
+async function main(){const result={label,scope:'reported Console integration cases, synthetic loopback fixtures; no remote code execution or product stores',checks:[]},server=http.createServer(serve);await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin=`http://127.0.0.1:${server.address().port}`;let browser;
+ try{browser=await pw.chromium.launch({headless:true,...(process.env.HALVETH_BROWSER?{executablePath:process.env.HALVETH_BROWSER}:{})});}catch(error){server.close();throw error;}result.browser=browser.version();
  async function page(kind,reduced='reduce'){const p=await browser.newPage({viewport:{width:1050,height:800},reducedMotion:reduced,acceptDownloads:true});await p.addInitScript(()=>{requestAnimationFrame=()=>0;});await p.route('**/*',r=>r.request().url().startsWith(origin)?r.continue():r.abort());p.on('download',d=>{void d.cancel().catch(()=>{});});p.on('pageerror',e=>console.log('PAGE_ERROR '+e.message));await p.goto(origin+(kind==='console'?'/console/index.html':kind==='studio'?'/web/studio/index.html':'/web/forschung.html'));try{await p.waitForFunction(kind=>kind==='console'?globalThis.__review?.ready()&&globalThis.__korridotProbe?.simulation().state?.materialCells?.length===960:globalThis.HALVETHScenes?.length,kind,{timeout:5000,polling:50});}catch(e){console.log('READY_DIAGNOSTIC '+JSON.stringify(await p.evaluate(()=>({review:typeof __review,probe:typeof __korridotProbe,scripts:[...document.scripts].map(s=>new URL(s.src).origin+new URL(s.src).pathname),model:globalThis.__korridotProbe?.simulation()?.mode,ready:globalThis.__review?.ready(),status:document.querySelector('#watchStatus')?.textContent}))));throw e;}return p;}
  async function check(id,fn){if(process.env.REVIEW_CASE&&!id.includes(process.env.REVIEW_CASE))return;try{const metrics=await fn();result.checks.push({id,status:metrics.ok?'PASS':'FAIL',metrics});console.log(`${metrics.ok?'PASS':'FAIL'} ${id}`);}catch(e){result.checks.push({id,status:'ERROR',error:e.stack});console.log('ERROR '+id+' '+e.message);}}
  try{
@@ -40,6 +41,62 @@ async function main(){const result={label,scope:'reported Console integration ca
    const actual=await p.evaluate(()=>__review.payload());
    return {ok:JSON.stringify(doc.observation.camera)===JSON.stringify(actual.observation.camera)&&doc.observation.lens===actual.observation.lens&&
     JSON.stringify(doc.model)===JSON.stringify(actual.model),pose:actual.observation.camera,lens:actual.observation.lens};
+  }finally{await p.close();}
+ });
+ await check('C-D8-FOLLOW-IMPORT',async()=>{
+  const p=await page('console');
+  try{
+   const saved=await p.evaluate(()=>{
+    const select=document.getElementById('simulationMode');select.value='doppelacht';select.dispatchEvent(new Event('change'));
+    const follow=document.querySelector('[data-d8-follow]');follow.checked=true;follow.dispatchEvent(new Event('change'));
+    return __review.payload();
+   });
+   await p.evaluate(()=>{document.getElementById('watchPause').click();__review.tick(1000);__review.tick(13000);__korridotProbe.redraw();});
+   const moved=await p.evaluate(()=>__review.payload());
+   assert.notDeepEqual(moved.observation.camera,saved.observation.camera);
+   await p.locator('#simulationImportFile').setInputFiles({name:'follow.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(saved))});
+   await p.waitForFunction(()=>!document.getElementById('simulationImportFile').value,null,{polling:20});
+   const restored=await p.evaluate(()=>{__korridotProbe.redraw();return __review.payload();});
+   return {ok:JSON.stringify(restored.observation.camera)===JSON.stringify(saved.observation.camera)&&restored.observation.view.followId===saved.observation.view.followId&&!restored.clock.playing&&restored.model.tick===saved.model.tick,
+    savedCamera:saved.observation.camera,restoredCamera:restored.observation.camera,followId:restored.observation.view.followId};
+  }finally{await p.close();}
+ });
+ await check('C-D8-ASYNC-IMPORT',async()=>{
+  require(path.join(rootConsole,'src/doppelacht-source.js'));
+  const model=require(path.join(rootConsole,'src/doppelacht.js')).create({layout:'shell'});
+  for(let i=0;i<15;i++)model.step(60);
+  const saved=model.snapshot(),p=await page('console');
+  try{
+   await p.evaluate(()=>{globalThis.__importHeartbeat=0;globalThis.__importTimer=setInterval(()=>{__importHeartbeat++;__korridotProbe.redraw();},16);});
+   const start=Date.now();
+   await p.locator('#simulationImportFile').setInputFiles({name:'900-seconds.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(saved))});
+   await p.waitForFunction(()=>document.getElementById('watchStatus').textContent.includes('wird geprüft'),null,{polling:20});
+   const during=await p.evaluate(()=>({heartbeat:__importHeartbeat,status:document.getElementById('watchStatus').textContent,mode:__review.payload().mode}));
+   await p.waitForFunction(()=>!document.getElementById('simulationImportFile').value,null,{polling:20,timeout:90000});
+   const after=await p.evaluate(()=>{clearInterval(__importTimer);return{heartbeat:__importHeartbeat,payload:__review.payload()};});
+   return {ok:during.mode==='material'&&after.heartbeat>during.heartbeat+5&&after.payload.model.tick===saved.tick&&JSON.stringify(after.payload.model)===JSON.stringify(saved),
+    replayTicks:saved.tick,elapsedMs:Date.now()-start,heartbeatDuring:during.heartbeat,heartbeatAfter:after.heartbeat,progress:during.status};
+  }finally{await p.close();}
+ });
+ await check('C-D8-IMPORT-CANCEL',async()=>{
+  const p=await page('console');
+  try{
+   const saved=await p.evaluate(()=>{const model=HALVETHDoubleEight.create({count:64,layout:'shell'});model.step(30);return model.snapshot();});
+   const file={name:'cancelled.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(saved))};
+   await p.locator('#simulationImportFile').setInputFiles(file);
+   await p.waitForFunction(()=>document.getElementById('watchStatus').textContent.includes('wird geprüft'),null,{polling:10});
+   await p.locator('#watchReset').dispatchEvent('click');
+   await p.waitForTimeout(100);
+   const reset=await p.evaluate(()=>({mode:__review.payload().mode,empty:!document.getElementById('simulationImportFile').value,status:document.getElementById('watchStatus').textContent}));
+   // The same filename must be selectable after cancellation.
+   await p.locator('#simulationImportFile').setInputFiles(file);
+   await p.waitForFunction(()=>document.getElementById('watchStatus').textContent.includes('wird geprüft'),null,{polling:10});
+   const fresh=await p.evaluate(()=>HALVETHDoubleEight.create({count:16}).snapshot());
+   await p.locator('#simulationImportFile').setInputFiles({name:'newer.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(fresh))});
+   await p.waitForFunction(()=>!document.getElementById('simulationImportFile').value,null,{polling:10});
+   await p.waitForTimeout(100);
+   const latest=await p.evaluate(()=>__review.payload());
+   return {ok:reset.mode==='material'&&reset.empty&&!reset.status.includes('wird geprüft')&&latest.mode==='doppelacht'&&latest.model.configuration.count===16&&latest.model.tick===0,reset,latestCount:latest.model.configuration.count};
   }finally{await p.close();}
  });
  await check('C-STARS-01',async()=>{const p=await page('console');try{const cases=await p.evaluate(()=>{const out=[];for(const axis of['x','y','z'])for(const q of[1,.5]){const first={x:0,y:0,z:42,[axis]:95.999},last={...first,[axis]:96.001},a=__review.cpuSample(first,q),b=__review.cpuSample(last,q),retained=a.filter(p=>b.some(v=>Math.hypot(p.x-v.x,p.y-v.y,p.z-v.z)<.001));out.push({axis,quality:q,before:a.length,after:b.length,retained:retained.length});}return out;});return{ok:cases.every(c=>c.before>5&&c.retained>=c.before-1),cases};}finally{await p.close();}});

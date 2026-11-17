@@ -32,3 +32,19 @@ Der Einstieg zeigt zwölf anfangs gleich weit entfernte Musterpaare. Ihre Mittel
 Die Kamera beginnt bei 6.400 Modelleinheiten. Die projizierten Zellpositionen ergeben einen gemeinsamen Lichtfleck, solange ihre Ausdehnung unter der Bildauflösung liegt. Beim Heranfahren geht der Fleck kontinuierlich in die einzeln projizierten Zellen über. Der Lichtpunkt-Modus zeigt die freie Rechnung in sechsfacher Zeitlupe. Der Geschwindigkeitsregler wirkt auf diese Wiedergaberate. Uhren und Exporte führen weiterhin Modellsekunden. Während der ersten sechs Sekunden fährt die Kamera bis zum Übersichtsabstand von 19,2. Ein Klick oder Tippen auf den fernen Punkt öffnet die Übersicht direkt. Mausrad und Zwei-Finger-Zoom regeln den Abstand. Ziehen dreht den Blick. Unter **Mehr** sind Abstand, Einzelzellverfolgung und die ursprüngliche Doppelacht in zwei Ebenen erreichbar. Reduzierte Bewegung startet pausiert.
 
 Abstand und Kamerawinkel gehören zur Beobachtung. Die zwölf Richtungen liefern eine endliche räumliche Anordnung. Die Darstellung ist ein dimensionsloser Modellversuch. Historische 3D-Replays verwenden ihre ursprünglichen Startbedingungen.
+
+## Gespeicherte Versuche öffnen
+
+Die JSON-Prüfung zeigt ihren Fortschritt und gibt zwischen kurzen Rechenpaketen
+die Bedienoberfläche frei. Das bisherige Modell bleibt bis zur vollständig
+bestandenen Prüfung erhalten. Ein Neustart oder ein neuer Import bricht eine
+noch laufende Prüfung ab. Erst der zuletzt angeforderte, gültige Import ersetzt
+den Zustand und startet pausiert. Bei aktiver Zellverfolgung wird der Bezugspunkt
+aus dem geladenen Modell neu gesetzt, damit die gespeicherte Kameraposition
+beim ersten Bild erhalten bleibt.
+
+Die Berechnungsgleichungen und Saat sind unverändert. Exporte der unmittelbar
+vorherigen Solverrevision `b67b0a71998812de55bdb2b068275b5835959f9fff4f597ca601471a1ff44e85`
+bleiben kompatibel; neue Exporte nennen den aktuellen Quellhash. Bis 120.000
+Schritte wird die gespeicherte Rechnung erneut aus der Saat geprüft. Längere
+Checkpoints behalten die vorhandene Prüfung ihrer Felder und Invarianten.
