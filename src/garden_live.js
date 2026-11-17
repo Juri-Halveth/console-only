@@ -420,7 +420,8 @@
     const speed=Number(simulationSpeed?.value||1);
     if(!simulationModel||!simulationPlaying||!(speed>0))return;
     if(pointView()&&approach.update(materialView,dt)){positionSpatial({yaw:yawOffset,pitch:pitchOffset});spatialTools.meter(materialView.distance);}
-    simulationDebt+=dt*speed;let count=0;
+    const rate=simulationMode==='doppelacht'&&spatialConfig.layout==='shell'?simulationAPI.spatialView.presentationRate:1;
+    simulationDebt+=dt*speed*rate;let count=0;
     const h=simulationStep();
     while(simulationDebt+1e-12>=h&&count<240){
       const inputs=simulationMode==='material'?{drive:materialDriveValue,rodCoupling:materialCouplingValue}:simulationMode==='experimental'?{damping:simulationPreset.damping}:{};
