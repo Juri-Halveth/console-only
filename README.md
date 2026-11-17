@@ -31,9 +31,11 @@ python -B tools/build_preview.py
 ./garden live
 ```
 
-Die statische `docs/`-Vorschau enthält ausschließlich synthetische Beispiele.
-Eine Veröffentlichung dieses Branches ist von einer Aktualisierung der
-GitHub-Pages-Livefassung getrennt. Die Pfadlizenz bleibt [MIT](LICENSE);
+Die statische `docs/`-Fassung enthält synthetische Modell- und Beispielszenen
+sowie die ausdrücklich ausgewählte GG24-Zeitspur mit öffentlichen
+Förderberichten und Transaktionsbelegen. Die
+[veröffentlichte Fassung](https://juri-halveth.github.io/console-only/) läuft auf
+GitHub Pages. Die Pfadlizenz bleibt [MIT](LICENSE);
 externe Projekte behalten ihre jeweiligen Rechte.
 
 Reproduzierbare vorhandene Prüfungen:
@@ -49,11 +51,15 @@ Ergebnisse früherer Abschnitte sind historische Prüfstände.
 
 ## HALVETH / KORRIDOT 0.8 · begehbare Ereignisse
 
-**[3D-Demo im Browser öffnen](https://juri-halveth.github.io/console-only/)** · [Programmcode](https://github.com/Juri-Halveth/console-only) · [Projektübersicht](https://juri-halveth.github.io/arbeiten/)
+**[3D-Demo im Browser öffnen](https://juri-halveth.github.io/console-only/)** · [Programmcode](https://github.com/Juri-Halveth/console-only) · [Projektübersicht](https://juri-halveth.github.io/arbeiten/) · [Netz durchsuchen](https://juri-halveth.github.io/suche/)
+
+Die gemeinsame öffentliche Netzwerksuche erfasst Projektmetadaten,
+README-Kurzbeschreibungen und einzeln dokumentierte Einstiege. Sie greift nicht
+auf lokale `.zero/`-Dateien zu; diese bleiben in der lokalen Quellensuche.
 
 ![KORRIDOT 0.8 Offline-Demo mit Sternenraum und Ereigniszeitspur](docs/og-korridot.png)
 
-KORRIDOT macht **aufgezeichnete Software-Versuche räumlich erkundbar**. Ein 3D-Modellkorridor zeigt Ereignismarkierungen, Zeitpunkte und verknüpfte Belege. Die öffentliche Demo enthält **nur synthetische Daten**. Sie liest keine lokalen Dateien und startet keine Programme.
+KORRIDOT macht **aufgezeichnete Software-Versuche räumlich erkundbar**. Ein 3D-Modellkorridor zeigt Ereignismarkierungen, Zeitpunkte und verknüpfte Belege. Die Standardszene verwendet synthetische Daten; die ausdrücklich gewählte GG24-Zeitspur bindet öffentliche Förderberichte und Transaktionsbelege. Die öffentliche Fassung liest keine lokalen Dateien und startet keine Programme.
 
 **Fliegen:** Rechte Maustaste halten und lenken oder Touch gedrückt ziehen. `W` vorwärts, `S` zurück, `Shift+S` Turbo-Rückflug, `X` bremsen, `Home` zum Eingang; `Leertaste` schaltet den Autopiloten bewusst um. Ein Klick auf Ereignismarkierungen oder auf die Zeitspur zeigt die Details. Sterne sind modellierte 3D-Punkte, keine astronomischen Daten. Für deine eigenen lokalen Belege verwende `./garden live`.
 
@@ -181,8 +187,8 @@ auf die Dokumentation oder Portale verweisen, behalten ihre eigenen Rechte.
 
 ## Doppelacht im Flugraum
 
-In der Vorschau dieses Branches öffnet die Abfrage `?modell=doppelacht` direkt die 3D-Szene. Unter **Mehr** stehen vier Kameras, Zellverfolgung, Kopplung, JSON und 4K bereit. [Modell und Prüftoleranzen](DOPPELACHT.md).
+Die [veröffentlichte Doppelacht-Szene](https://juri-halveth.github.io/console-only/?modell=doppelacht) öffnet mit der Abfrage `?modell=doppelacht` direkt den 3D-Flugraum. Unter **Mehr** stehen vier Kameras, Zellverfolgung, Kopplung, JSON und 4K bereit. [Modell und Prüftoleranzen](DOPPELACHT.md).
 
-[GG24-Förderberichte im Korridor](https://juri-halveth.github.io/console-only/?spur=gg24) öffnet nach Veröffentlichung dieser Fassung zwei datierte Berichtsstände und eine anhand von zwei Logs geprüfte Übertragung von 2.000 DAI auf OP Mainnet. Für die jeweilige lokale Vorschau hängt man `?spur=gg24` an die Startadresse an. Die Zeitspur bindet die öffentlichen Quellen und zeigt ihre ausgewiesenen USD-Beträge. [Lichtpunkt und Kamerabedienung](DOPPELACHT.md#lichtpunkt-und-rundumblick).
+[GG24-Förderberichte im Korridor](https://juri-halveth.github.io/console-only/?spur=gg24) öffnet zwei datierte Berichtsstände und eine anhand von zwei Logs geprüfte Übertragung von 2.000 DAI auf OP Mainnet. Für die jeweilige lokale Vorschau hängt man `?spur=gg24` an die Startadresse an. Die Zeitspur bindet die öffentlichen Quellen und zeigt ihre ausgewiesenen USD-Beträge. [Lichtpunkt und Kamerabedienung](DOPPELACHT.md#lichtpunkt-und-rundumblick).
 
 [Förderberichte, Blöcke und IPFS-Titel selbst nachprüfen](tools/gg24/README.md).
