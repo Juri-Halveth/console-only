@@ -5,6 +5,7 @@
 import { OPTICS_GLSL, createOpticsState } from './space_optics.mjs';
 
 export const CELL_SIZE=96;
+export const LOCAL_STARS_PER_CELL=11;
 export const CELL_RADIUS=4;
 export const LOCAL_FADE_END=380;
 
@@ -187,12 +188,12 @@ export function createStarGeometry(seed=0x4b4f5252){
 export function createLocalStars(camera,seed=0x4b4f5252){
   const cell=[camera.x,camera.y,camera.z].map(v=>Math.floor(v/CELL_SIZE));
   const origin=cell.map(v=>v*CELL_SIZE);
-  const data=new Float32Array((2*CELL_RADIUS+1)**3*11*8);let k=0;
+  const data=new Float32Array((2*CELL_RADIUS+1)**3*LOCAL_STARS_PER_CELL*8);let k=0;
   for(let z=-CELL_RADIUS;z<=CELL_RADIUS;z++)
   for(let y=-CELL_RADIUS;y<=CELL_RADIUS;y++)
   for(let x=-CELL_RADIUS;x<=CELL_RADIUS;x++){
     const rng=randomGenerator(hash(cell[0]+x,cell[1]+y,cell[2]+z,seed));
-    for(let j=0;j<11;j++){
+    for(let j=0;j<LOCAL_STARS_PER_CELL;j++){
       data[k++]=(x+rng())*CELL_SIZE;data[k++]=(y+rng())*CELL_SIZE;data[k++]=(z+rng())*CELL_SIZE;
       const mag=rng(),tint=rng(),brightness=.23+.90*Math.pow(mag,3);
       data[k++]=brightness*(tint<.16?.64:tint>.7?1:.92);

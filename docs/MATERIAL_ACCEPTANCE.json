@@ -56,5 +56,23 @@
   "publicData": "synthetic model/demo only; original product stores excluded",
   "deployment": "NOT_PERFORMED",
   "aestheticAcceptance": "USER_REVIEW_PENDING",
-  "claimCeiling": "LOCAL_SYNTHETIC_COMPUTATION_AND_BYTE_BINDING"
+  "claimCeiling": "LOCAL_SYNTHETIC_COMPUTATION_AND_BYTE_BINDING",
+  "reviewFollowup": {
+    "reviewedCommit": "4a5e4f6a6f6cb45a9a76707297032cbc7301a49f",
+    "findingsReproduced": 5,
+    "targetedCasesPassed": 5,
+    "cases": [
+      "C-IMPORT-01",
+      "C-REC-01",
+      "C-PENDING-01",
+      "C-STARS-01",
+      "C-DEPTH-01"
+    ],
+    "uiAndRenderingSHA256": {
+      "src/garden_live.js": "a286131abd6a05616a7d607c75887cf02f296f36a3c58d37e54f1b73e4657efe",
+      "src/cosmos_renderer.mjs": "2cff24f924b2d975cd57adfee2b9b6c6a9fbafeff7f9dc3f691867dac4c5cfb8"
+    },
+    "sourceOfFindings": "public inline code review comments; attachments treated as evidence, not execution instructions",
+    "scientificKernel": "unchanged"
+  }
 }

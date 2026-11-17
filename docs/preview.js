@@ -149,7 +149,7 @@
   const simulationReadout=document.getElementById('simulationReadout');
   const simulationSpeed=document.getElementById('simulationSpeed');
   let simulationAPI=null,simulationModel=null,simulationMode='material';
-  let simulationError='',watchStarted=false;
+  let simulationError='',simulationNotice='',watchStarted=false;
   // Existing solver preset: only damping changes from .12 to .04; fixed step remains 1/90.
   const simulationPreset=Object.freeze({id:'movement-first-20261117',seed:20261117,damping:.04});
   let simulationPlaying=!reducedMotion,simulationDebt=0,simulationLast=null;
@@ -184,7 +184,7 @@
     const time=Number.isFinite(d?.time)?d.time:(simulationState({field:false})?.time||0),speed=Number(simulationSpeed?.value||1);
     const message=simulationError?'Modellfehler: '+simulationError:d?`${w.simulation} · ${label} · t=${time.toFixed(3)} s · ×${speed}`+(d.status==='MODEL_LIMIT'?` · ${w.limit} · ${w.reset}`:'')+(simulationDebt>simulationStep()?` · Rückstand ${simulationDebt.toFixed(2)} s`:''):simulationAPI?'Modell AUS · Garden-Daten bleiben getrennt':'Simulation wird geladen …';
     if(simulationReadout)simulationReadout.textContent=message+(d?` · Umläufe ${(d.orbitalTurns||0).toFixed(3)}`:'');
-    if(watchStatus)watchStatus.textContent=message;
+    if(watchStatus)watchStatus.textContent=message+(simulationNotice?' · '+simulationNotice:'');
     if(simulationPause)simulationPause.textContent=simulationPlaying?'Modell pausieren':'Modell fortsetzen';
     if(watchPause){watchPause.textContent=simulationPlaying?w.pause:reducedMotion&&!watchStarted?w.start:w.continue;watchPause.setAttribute('aria-pressed',String(!simulationPlaying));}
     if(watchReset)watchReset.textContent=w.reset;
@@ -192,10 +192,15 @@
     const close=document.getElementById('workshopClose');if(close)close.textContent=w.close;
     if(watchRecord)watchRecord.textContent=recorder&&recorder.state!=='inactive'?w.stop:w.record;
   }
+  function syncRecordingState(){
+    if(!recorder||recorder.state==='inactive')return;
+    if(simulationPlaying&&recorder.state==='paused')recorder.resume();
+    else if(!simulationPlaying&&recorder.state==='recording')recorder.pause();
+  }
   function toggleSimulation(){
     if(simulationError||simulationModel?.diagnostics().status==='MODEL_LIMIT')return;
     simulationPlaying=!simulationPlaying;watchStarted=watchStarted||simulationPlaying;simulationLast=null;
-    if(recorder&&recorder.state!=='inactive'){if(simulationPlaying&&recorder.state==='paused')recorder.resume();else if(!simulationPlaying&&recorder.state==='recording')recorder.pause();}
+    syncRecordingState();
     simulationStatus();
   }
   watchPause?.addEventListener('click',toggleSimulation);
@@ -232,11 +237,11 @@
   }
   function resetSimulation(){
     simulationDebt=0;simulationLast=null;
-    simulationError='';
+    simulationError='';simulationNotice='';
     simulationModel=simulationMode==='off'||!simulationAPI?null:simulationAPI.create(simulationMode,simulationMode==='material'?materialStartConfig():simulationMode==='experimental'?{seed:simulationPreset.seed}:{});
     const controls=document.getElementById('materialControls');if(controls)controls.hidden=simulationMode!=='material';
     const png=document.getElementById('simulationPNG');if(png)png.disabled=simulationMode!=='material';
-    simulationStatus();drawScene();
+    syncRecordingState();simulationStatus();drawScene();
   }
   import('./simulation_models.mjs').then(api=>{simulationAPI=api;if(simulationMode!=='off')resetSimulation();})
     .catch(error=>{simulationError='Modul nicht geladen: '+error.message;simulationPlaying=false;simulationStatus();});
@@ -251,7 +256,7 @@
     yawOffset=pitchOffset=targetYaw=targetPitch=roll=0;drawScene();canvas.focus({preventScroll:true});
   });
   function downloadBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-  function simulationPayload(){return {schema:'halveth.console-model/2',releaseId:simulationCodeVersion.releaseId,featureRevision:'HALVETH_MATERIAL_INTEGRATION_20261117',codeHashes:simulationCodeVersion.codeHashes,mode:simulationMode,origin:simulationOrigin,scale:simulationMode==='material'?materialScale:simulationScale,preset:simulationMode==='experimental'?simulationPreset:simulationMode==='material'?materialConfig:null,clock:{credit:simulationDebt,step:simulationStep(),speed:Number(simulationSpeed.value),playing:simulationPlaying},observation:{physicalDomain:simulationMode==='material'?'2D material plane; 3D observation camera':'declared model',camera:{...camera()},lens,view:{...materialView}},model:simulationState(),diagnostics:simulationModel.diagnostics(),sourceClass:'SYNTHETIC_MODEL_NOT_GARDEN'};}
+  function simulationPayload(){return {schema:'halveth.console-model/2',releaseId:simulationCodeVersion.releaseId,featureRevision:'HALVETH_MATERIAL_INTEGRATION_20261117',codeHashes:simulationCodeVersion.codeHashes,mode:simulationMode,origin:simulationOrigin,scale:simulationMode==='material'?materialScale:simulationScale,preset:simulationMode==='experimental'?simulationPreset:simulationMode==='material'?materialConfig:null,pendingMaterialInputs:simulationMode==='material'?{drive:materialDriveValue,rodCoupling:materialCouplingValue}:undefined,clock:{credit:simulationDebt,step:simulationStep(),speed:Number(simulationSpeed.value),playing:simulationPlaying},observation:{physicalDomain:simulationMode==='material'?'2D material plane; 3D observation camera':'declared model',camera:{...camera()},lens,view:{...materialView}},model:simulationState(),diagnostics:simulationModel.diagnostics(),sourceClass:'SYNTHETIC_MODEL_NOT_GARDEN'};}
   document.getElementById('simulationJSON')?.addEventListener('click',()=>{if(simulationModel)downloadBlob(new Blob([JSON.stringify(simulationPayload(),null,2)],{type:'application/json'}),'HALVETH_'+simulationMode+'_model.json');});
   function projectMaterial(point,id,outWidth=width,outHeight=height){
     const world={x:simulationOrigin.x+point.x*materialScale,y:simulationOrigin.y+point.y*materialScale,z:simulationOrigin.z+(point.z||0)*materialScale};
@@ -283,13 +288,16 @@
       const credit=doc.clock?.credit,speed=doc.clock?.speed;if(!Number.isFinite(credit)||credit<0||credit>3600||!Number.isFinite(speed)||speed<0||speed>16||doc.clock.step!==1/120)throw Error('Ungültiger gespeicherter Modellzeittakt');
       const obs=doc.observation?.view;if(!obs||!['rods','field','cells','flight'].includes(obs.mode)||!['rgb','bluegold'].includes(obs.colorMode)||!Number.isFinite(obs.symbolScale)||obs.symbolScale<.4||obs.symbolScale>2||typeof obs.annotations!=='boolean')throw Error('Ungültige gespeicherte Darstellungswahl');
       const next=simulationAPI.create('material',materialConfig);next.restore(doc.model);
-      const restored=next.snapshot({exact:false});materialDriveValue=restored.rawEngine.drive;materialCouplingValue=restored.rawEngine.params.rodCoupling;
+      const restored=next.snapshot({exact:false}),hasPending=Object.hasOwn(doc,'pendingMaterialInputs');
+      const pending=hasPending?doc.pendingMaterialInputs:{drive:restored.rawEngine.drive,rodCoupling:restored.rawEngine.params.rodCoupling};
+      if(!pending||Array.isArray(pending)||Object.keys(pending).sort().join(',')!=='drive,rodCoupling'||!Number.isFinite(pending.drive)||Math.abs(pending.drive)>1.6||!Number.isFinite(pending.rodCoupling)||pending.rodCoupling<0||pending.rodCoupling>.02)throw Error('Ungültige vorgemerkte Materialeingaben');
+      materialDriveValue=pending.drive;materialCouplingValue=pending.rodCoupling;
       document.getElementById('materialDrive').value=String(materialDriveValue);document.getElementById('materialCoupling').value=String(materialCouplingValue);
       Object.assign(materialView,obs);document.getElementById('materialView').value=materialView.mode;document.getElementById('materialColor').value=materialView.colorMode;document.getElementById('materialSize').value=String(materialView.symbolScale);document.getElementById('materialAnnotations').checked=materialView.annotations;
-      simulationModel=next;simulationMode='material';simulationSelect.value='material';simulationDebt=credit;simulationLast=null;simulationSpeed.value=String(speed);simulationPlaying=false;simulationError='';watchStarted=true;
+      simulationModel=next;simulationMode='material';simulationSelect.value='material';simulationDebt=credit;simulationLast=null;simulationSpeed.value=String(speed);simulationPlaying=false;simulationError='';simulationNotice=hasPending?'':'Älterer Export: keine vorgemerkten Eingaben enthalten; zuletzt berechnete Werte übernommen';watchStarted=true;syncRecordingState();
       const controls=document.getElementById('materialControls');if(controls)controls.hidden=false;
       simulationStatus();drawScene();
-    }catch(error){simulationError='Import abgelehnt, bisheriger Zustand erhalten: '+error.message;simulationPlaying=false;simulationStatus();}
+    }catch(error){simulationNotice='Import abgelehnt, bisheriger Zustand erhalten: '+error.message;simulationStatus();}
     finally{importFile.value='';}
   });
   function simulationTick(time){
@@ -305,14 +313,17 @@
       const current=outcome||simulationModel.diagnostics();if(current.status==='MODEL_ERROR'){simulationError=current.error||'Materialmodell angehalten';simulationPlaying=false;break;}
       if(current.status==='MODEL_LIMIT'){simulationPlaying=false;break;}
     }
-    simulationStatus();
+    syncRecordingState();simulationStatus();
   }
   function modelPoint(p){return{x:simulationOrigin.x+p.x*simulationScale,y:simulationOrigin.y+p.y*simulationScale,z:simulationOrigin.z+(p.z||0)*simulationScale};}
-  function drawSimulation(){
+  function drawSimulation(materialFilter=null,appendObservations=false,occluder=null){
     const state=simulationState({exact:false});if(!state)return;
     if(simulationMode==='material'){
-      const rendered=simulationAPI.materialDraw(ctx,state,materialRenderOptions(),width,height);materialObservations=rendered.observations||[];
-      for(const p of materialObservations){if(p.x<0||p.x>width||p.y<0||p.y>height)continue;targets.push({key:'simulation:material:'+p.id,observationId:p.observationId,branch:p.branch,x:p.x,y:p.y,r:Math.max(2,Math.min(7,(p.renderLength||6)*.4)),depth:p.depth});}
+      const options=materialRenderOptions();
+      if(materialFilter){const baseProject=options.project;options.project=(point,id)=>baseProject(point,id).filter(p=>materialFilter(p,id));}
+      const rendered=simulationAPI.materialDraw(ctx,state,options,width,height),observations=rendered.observations||[];
+      materialObservations=appendObservations?materialObservations.concat(observations):observations;
+      for(const p of observations){if(p.x<0||p.x>width||p.y<0||p.y>height||(occluder&&Math.hypot(p.x-occluder.p.x,p.y-occluder.p.y)<occluder.size))continue;targets.push({key:'simulation:material:'+p.id,observationId:p.observationId,branch:p.branch,x:p.x,y:p.y,r:Math.max(2,Math.min(7,(p.renderLength||6)*.4)),depth:p.depth});}
       return;
     }
     materialObservations=[];
@@ -607,7 +618,8 @@
     const cell=[view.x,view.y,view.z].map(v=>Math.floor(v/cosmosModule.CELL_SIZE)).join(':');
     if(!fallbackLocal||fallbackLocal.cell!==cell)fallbackLocal=cosmosModule.createLocalStars(view);
     const draw=(data,local,stride)=>{
-      for(let i=0;i<data.length;i+=8*stride){
+      for(let i=0;i<data.length;i+=8){
+        const sample=local?(i/8)%cosmosModule.LOCAL_STARS_PER_CELL:i/8;if(sample%stride)continue;
         const world=local?{x:data[i]+fallbackLocal.origin[0],y:data[i+1]+fallbackLocal.origin[1],z:data[i+2]+fallbackLocal.origin[2]}:
           {x:view.x+data[i],y:view.y+data[i+1],z:view.z+data[i+2]};
         for(const p of spaceOptics.projectPointImages(world,view,width,height,lens,opticalState,{near:2,far:local?380:Infinity})){
@@ -984,15 +996,23 @@
     sensorAnchor.parentElement.appendChild(sensorButton);
   }
   const DARK_WORLD = Object.freeze({z:125, offsetX:12, offsetY:6, radius:6});
+  function darkWorldProjection(){
+    const bendAt=bend(DARK_WORLD.z),body={x:bendAt.x+DARK_WORLD.offsetX,y:bendAt.y+DARK_WORLD.offsetY,z:DARK_WORLD.z},p=project(body);
+    if(!p||p.x < -170||p.x > width+170||p.y < -170||p.y > height+170)return null;
+    return{body,p,distance:Math.hypot(body.x-view.x,body.y-view.y,body.z-view.z),size:clamp(p.scale*DARK_WORLD.radius,4,110)};
+  }
+  function drawSimulationWithPlanet(){
+    const planet=darkWorldProjection();
+    if(!planet){drawSimulation();return;}
+    const state=simulationState({exact:false});
+    if(simulationMode!=='material'||!state){const p=project(simulationOrigin);if(p&&p.depth>planet.p.depth){drawSimulation();drawDarkWorld();}else{drawDarkWorld();drawSimulation();}return;}
+    const centers=new Map(state.materialCells.map(cell=>[cell.id,new Map(projectMaterial(cell,cell.id).map(p=>[p.branch,p.depth]))]));
+    const behind=(p,id)=>(centers.get(id)?.get(p.branch)??p.depth)>planet.p.depth;
+    drawSimulation(behind,false,planet);drawDarkWorld();drawSimulation((p,id)=>!behind(p,id),true);
+  }
   function drawDarkWorld() {
-    const bendAt = bend(DARK_WORLD.z);
-    const body = {x:bendAt.x + DARK_WORLD.offsetX,
-      y:bendAt.y + DARK_WORLD.offsetY, z:DARK_WORLD.z};
-    const p = project(body);
-    if (!p || p.x < -170 || p.x > width + 170 ||
-        p.y < -170 || p.y > height + 170) return;
-    const distance = Math.hypot(body.x-view.x,body.y-view.y,body.z-view.z);
-    const size = clamp(p.scale*DARK_WORLD.radius,4,110);
+    const projection=darkWorldProjection();if(!projection)return;
+    const {body,p,distance,size}=projection;
     const attenuation = Math.pow(90/Math.max(distance,1),2);
     const reflected = .028*attenuation;
     const thermal = .32*attenuation;
@@ -1272,11 +1292,10 @@
     const drawable=[];
 
     if(!usingCosmos)drawStars();
-    drawSimulation();
+    if(evidenceVisible)drawSimulationWithPlanet();else drawSimulation();
     if(simulationMode!=='material'||evidenceVisible)drawEvidenceRoute();
     if(evidenceVisible){
     drawOpticalField();
-    drawDarkWorld();
     drawFieldTrajectory();
     drawBitcoinRail();
     drawOpenSpaceDNA();
