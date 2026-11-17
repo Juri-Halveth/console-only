@@ -309,7 +309,11 @@
     syncMaterialControls();
     syncRecordingState();simulationStatus();drawScene();
   }
-  import('./simulation_models.mjs').then(api=>{simulationAPI=api;setupSpatialTools();if(simulationMode!=='off')resetSimulation();})
+  import('./simulation_models.mjs').then(api=>{
+    simulationAPI=api;setupSpatialTools();
+    if(simulationMode!=='off')resetSimulation();
+    else{syncMaterialControls();simulationStatus();}
+  })
     .catch(error=>{simulationError='Modul nicht geladen: '+error.message;simulationPlaying=false;simulationStatus();});
   if(simulationSelect)simulationSelect.addEventListener('change',()=>{simulationMode=simulationSelect.value;resetSimulation();});
   if(simulationPause)simulationPause.addEventListener('click',toggleSimulation);

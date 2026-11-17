@@ -121,6 +121,15 @@ test('spaceflight initializes with finite camera and local read-only state',asyn
   assert.equal(typeof r.probe.spaceflight().evidenceVisible,'boolean');
 });
 
+test('funding route finishes module loading with simulation off and matching controls',async()=>{
+  const r=await runtime({search:'?spur=gg24'});
+  assert.equal(r.probe.simulation().mode,'off');assert.equal(r.probe.simulation().state,null);
+  assert.equal(r.get('simulationMode').value,'off');
+  assert.equal(r.get('materialControls').hidden,true);assert.equal(r.get('simulationPNG').disabled,true);
+  assert.match(r.get('watchStatus').textContent,/Modell AUS/);
+  assert.doesNotMatch(r.get('watchStatus').textContent,/wird geladen/);
+});
+
 function importPacket(r,packet){
   const input=r.get('simulationImportFile'),text=JSON.stringify(packet);
   input.value='fixture.json';input.files=[{size:text.length,text:async()=>text}];
