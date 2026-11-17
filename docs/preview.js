@@ -1638,6 +1638,7 @@
     wheelImpulse=clamp(wheelImpulse+Math.sign(event.deltaY)*7,-25,25);
   },{passive:false});
   const allowed=new Set(['w','s','a','d','q','e','x','i','j','k','l','u','o','b','n','p','v','f','g','r','Shift','ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ','Home','Enter']);
+  const navigationKeys=['w','s','a','d','q','e','x','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home'];
   canvas.addEventListener('keydown',event=>{
     const key=event.key.length===1&&event.key!==' '?event.key.toLowerCase():event.key;
     if(!allowed.has(key))return;
@@ -1676,7 +1677,7 @@
   });
   function animate(time) {
     if(simulationMode==='doppelacht'&&Number.isFinite(materialView.distance)&&
-       (keys.size||thrustHeld||reverseHeld||motion||routeAutopilot||btcFlight.active||evidenceVisible)){
+       (navigationKeys.some(key=>keys.has(key))||thrustHeld||reverseHeld||motion||routeAutopilot||btcFlight.active||evidenceVisible)){
       approach.stop();delete materialView.distance;spatialTools.meter(undefined);
     }
     simulationTick(time);

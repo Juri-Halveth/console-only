@@ -3,13 +3,20 @@ const fs=require('fs'),path=require('path'),http=require('http'),assert=require(
 const ROOT=path.resolve(__dirname,'..'),OUT=path.resolve(process.env.HALVETH_TEST_OUTPUT||path.join(ROOT,'evidence/review'));fs.mkdirSync(OUT,{recursive:true});
 const pw=require(process.env.HALVETH_PLAYWRIGHT||'playwright'),label=process.env.REVIEW_LABEL||'current';
 const rootConsole=path.resolve(process.env.HALVETH_CONSOLE_ROOT||ROOT),rootWeb='';
-const consoleHook=`globalThis.__review={tick:simulationTick,payload:simulationPayload,recordState:()=>recorder?.state||'none',capture:captureRecordingFrame,ready:()=>!!cosmosModule&&!!spaceOptics,
+const consoleHook=`globalThis.__review={tick:simulationTick,frame:animate,payload:simulationPayload,recordState:()=>recorder?.state||'none',capture:captureRecordingFrame,ready:()=>!!cosmosModule&&!!spaceOptics,
  cpuSample:(position,q)=>{const saved={view,quality,spaceOptics,fallbackLocal};const points=[];try{view={...camera(),...position,yaw:0,pitch:0,roll:0};quality=q;opticalState=spaceOptics.createOpticsState({beta:0,lensRadius:0});const actual=spaceOptics;spaceOptics={...actual,projectPointImages:(p,c,w,h,l,o,options)=>{const images=actual.projectPointImages(p,c,w,h,l,o,options);if(options.far===380&&images.some(v=>v.x>=0&&v.x<=w&&v.y>=0&&v.y<=h&&v.distance<300))points.push({...p});return images;}};drawStars();return points;}finally{view=saved.view;quality=saved.quality;spaceOptics=saved.spaceOptics;fallbackLocal=saved.fallbackLocal;}},
  compose:position=>{const saved={view,opticalState};try{view={...camera(),...position};opticalState=spaceOptics.createOpticsState({beta:0,lensRadius:0});const bendAt=bend(DARK_WORLD.z),body={x:bendAt.x+DARK_WORLD.offsetX,y:bendAt.y+DARK_WORLD.offsetY,z:DARK_WORLD.z},planet=project(body),radius=clamp(planet.scale*DARK_WORLD.radius,4,110);ctx.setTransform(resolution,0,0,resolution,0,0);ctx.fillStyle='#010205';ctx.fillRect(0,0,width,height);drawSimulation();const raw=ctx.getImageData(0,0,canvas.width,canvas.height),candidates=materialObservations.filter(p=>Math.hypot(p.x-planet.x,p.y-planet.y)<radius-4),pixels=[];
  for(const c of candidates){let best=null;for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const x=Math.round((c.x+dx)*resolution),y=Math.round((c.y+dy)*resolution),i=(y*raw.width+x)*4,m=Math.max(raw.data[i],raw.data[i+1],raw.data[i+2]);if(!best||m>best.m)best={x,y,m};}if(best.m>100)pixels.push({id:c.id,...best});}
  ctx.fillStyle='#010205';ctx.fillRect(0,0,width,height);if(typeof drawSimulationWithPlanet==='function')drawSimulationWithPlanet();else{drawSimulation();drawDarkWorld();}const result=ctx.getImageData(0,0,canvas.width,canvas.height);return{planet:{x:planet.x,y:planet.y,depth:planet.depth,radius},cells:pixels.length,visible:pixels.filter(p=>{const i=(p.y*result.width+p.x)*4;return Math.max(result.data[i],result.data[i+1],result.data[i+2])>80;}).length,ids:pixels.map(p=>p.id)};}finally{view=saved.view;opticalState=saved.opticalState;drawScene();}}
 };`;
 const studioHook=`globalThis.__reviewStudio={camera:x=>Object.assign(camera,x)};`;
+function firstDifference(a,b,at='$'){
+ if(Object.is(a,b))return null;
+ if(!a||!b||typeof a!=='object'||typeof b!=='object')return{path:at,left:a,right:b};
+ const keys=new Set([...Object.keys(a),...Object.keys(b)]);
+ for(const key of keys){const difference=firstDifference(a[key],b[key],at+'.'+key);if(difference)return difference;}
+ return null;
+}
 function serve(req,res){let rel=decodeURIComponent(req.url.split('?')[0]),root,local;if(rel==='/state'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({garden:[],runs:[],jobs:[],gardenHead:'fixture',runHead:'fixture',jobHead:'fixture'}));}if(rel.startsWith('/console/')){root=path.join(rootConsole,'docs');local=rel.slice('/console'.length);}else if(rel.startsWith('/web/')){root=rootWeb;local=rel.slice('/web'.length);}else{res.writeHead(404);return res.end();}const f=path.resolve(root,'.'+local);if(!f.startsWith(root+path.sep)||!fs.existsSync(f)||!fs.statSync(f).isFile()){res.writeHead(404);return res.end();}let data=fs.readFileSync(f);if(f.endsWith('preview.js'))data=Buffer.from(data.toString().replace('window.__korridotProbe=Object.freeze({',consoleHook+'window.__korridotProbe=Object.freeze({'));if(f.endsWith(path.sep+'studio.js'))data=Buffer.from(data.toString().replace('})();',studioHook+'})();'));res.setHeader('Content-Type',f.endsWith('.js')||f.endsWith('.mjs')?'text/javascript':f.endsWith('.css')?'text/css':f.endsWith('.json')?'application/json':'text/html;charset=utf-8');res.end(data);}
 async function main(){const result={label,scope:'reported Console integration cases, synthetic loopback fixtures; no remote code execution or product stores',checks:[]},server=http.createServer(serve);await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin=`http://127.0.0.1:${server.address().port}`;let browser;
  try{browser=await pw.chromium.launch({headless:true,...(process.env.HALVETH_BROWSER?{executablePath:process.env.HALVETH_BROWSER}:{})});}catch(error){server.close();throw error;}result.browser=browser.version();
@@ -61,13 +68,39 @@ async function main(){const result={label,scope:'reported Console integration ca
     savedCamera:saved.observation.camera,restoredCamera:restored.observation.camera,followId:restored.observation.view.followId};
   }finally{await p.close();}
  });
+ await check('C-D8-VIEW-KEYS',async()=>{
+  const p=await page('console');
+  try{
+   const before=await p.evaluate(()=>{
+    const select=document.getElementById('simulationMode');select.value='doppelacht';select.dispatchEvent(new Event('change'));
+    return __review.payload().observation.view.distance;
+   });
+   await p.locator('#world').focus();await p.keyboard.down('f');
+   const focused=await p.evaluate(()=>{__review.frame(1000);return __review.payload().observation.view.distance;});
+   await p.keyboard.up('f');await p.keyboard.down('w');
+   const flying=await p.evaluate(()=>{__review.frame(1016);return __review.payload().observation.view.distance;});
+   await p.keyboard.up('w');
+   return {ok:Number.isFinite(before)&&focused===before&&flying===undefined,before,focused,navigationExited:flying===undefined};
+  }finally{await p.close();}
+ });
  await check('C-D8-ASYNC-IMPORT',async()=>{
   require(path.join(rootConsole,'src/doppelacht-source.js'));
   const model=require(path.join(rootConsole,'src/doppelacht.js')).create({layout:'shell'});
   for(let i=0;i<15;i++)model.step(60);
-  const saved=model.snapshot(),p=await page('console');
-  const start=Date.now();
+  const nodeSaved=model.snapshot(),p=await page('console');
+  let start=Date.now(),crossRuntimeDifference=null;
   try{
+   // A browser JSON round trip starts with a checkpoint produced by that browser.
+   // Math transcendental implementations can differ between Node and Chromium;
+   // record that comparison instead of silently relaxing the solver's exact check.
+   const generated=await p.evaluate(()=>{
+    const start=performance.now(),model=HALVETHDoubleEight.create({layout:'shell'});
+    for(let i=0;i<15;i++)model.step(60);
+    return{saved:model.snapshot(),elapsedMs:performance.now()-start};
+   });
+   const saved=generated.saved;crossRuntimeDifference=firstDifference(nodeSaved,saved);
+   console.log('D8_CHECKPOINT_RUNTIME_COMPARISON '+JSON.stringify({nodeBrowserFirstDifference:crossRuntimeDifference,browserGenerationMs:generated.elapsedMs}));
+   start=Date.now();
    await p.evaluate(()=>{
     globalThis.__importHeartbeat=0;globalThis.__importDraws=[];
     // RAF is intentionally disabled by this deterministic fixture. A heartbeat
@@ -86,14 +119,18 @@ async function main(){const result={label,scope:'reported Console integration ca
    const interactionStart=Date.now();await p.locator('#workshopToggle').dispatchEvent('click');
    const interactionMs=Date.now()-interactionStart,opened=await p.locator('#workshopToggle').getAttribute('aria-expanded');
    await p.waitForFunction(()=>!document.getElementById('simulationImportFile').value,null,{polling:20,timeout:90000});
-   const after=await p.evaluate(()=>{clearInterval(__importTimer);return{heartbeat:__importHeartbeat,redrawMs:__importDraws,payload:__review.payload()};});
-   return {ok:during.mode==='material'&&after.heartbeat>during.heartbeat+5&&after.redrawMs.length===3&&opened==='true'&&interactionMs<2000&&after.payload.model.tick===saved.tick&&JSON.stringify(after.payload.model)===JSON.stringify(saved),
-    replayTicks:saved.tick,elapsedMs:Date.now()-start,interactionMs,heartbeatDuring:during.heartbeat,heartbeatAfter:after.heartbeat,redrawMs:after.redrawMs,progress:during.status};
+   const after=await p.evaluate(()=>{clearInterval(__importTimer);return{heartbeat:__importHeartbeat,redrawMs:__importDraws,payload:__review.payload(),status:document.getElementById('watchStatus').textContent};});
+   const conditions={retainedDuring: during.mode==='material',heartbeat:after.heartbeat>during.heartbeat+5,redraws:after.redrawMs.length===3,
+    workshopOpened:opened==='true',responsiveClick:interactionMs<2000,restoredTick:after.payload.model.tick===saved.tick,exact:JSON.stringify(after.payload.model)===JSON.stringify(saved)};
+   const metrics={ok:Object.values(conditions).every(Boolean),conditions,
+    replayTicks:saved.tick,actualTick:after.payload.model.tick,elapsedMs:Date.now()-start,interactionMs,heartbeatDuring:during.heartbeat,heartbeatAfter:after.heartbeat,redrawMs:after.redrawMs,
+    progress:during.status,finalStatus:after.status,nodeBrowserFirstDifference:crossRuntimeDifference,importFirstDifference:firstDifference(saved,after.payload.model)};
+   console.log('D8_IMPORT_RESULT '+JSON.stringify(metrics));return metrics;
   }catch(error){
    const diagnostic=await p.evaluate(()=>({heartbeat:globalThis.__importHeartbeat,redrawMs:globalThis.__importDraws,
     status:document.getElementById('watchStatus').textContent,inputPending:!!document.getElementById('simulationImportFile').value,
     modelMode:__korridotProbe.simulation().mode,tick:__korridotProbe.simulation().state?.tick})).catch(e=>({unavailable:e.message}));
-   throw Error(error.message+'; import diagnostic '+JSON.stringify({elapsedMs:Date.now()-start,...diagnostic}));
+   throw Error(error.message+'; import diagnostic '+JSON.stringify({elapsedMs:Date.now()-start,nodeBrowserFirstDifference:crossRuntimeDifference,...diagnostic}));
   }finally{await p.close();}
  });
  await check('C-D8-IMPORT-CANCEL',async()=>{

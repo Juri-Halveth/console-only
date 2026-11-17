@@ -163,6 +163,17 @@ test('a newer import supersedes pending replay without the old cleanup clearing 
   assert.deepEqual(structuredClone(r.importProbe.payload().observation.camera),fresh.observation.camera);
 });
 
+test('shell view shortcuts preserve optical distance while navigation exits it',async()=>{
+  const r=await runtime({search:'?modell=doppelacht',instrument:true});
+  const distance=r.probe.material().view.distance;assert.ok(Number.isFinite(distance));
+  for(const key of ['f','Shift','r']){
+    r.key(key);r.step();r.key(key,'keyup');
+    assert.equal(r.probe.material().view.distance,distance,`${key} must preserve point-view optics`);
+  }
+  r.key('w');r.step();r.key('w','keyup');
+  assert.equal(r.probe.material().view.distance,undefined,'forward navigation must exit point view');
+});
+
 test('W+Shift passes the old 240-unit end without teleporting back',async()=>{
   const r=await runtime();r.key('w');r.key('Shift');
   let previous=r.probe.snapshot().z,maximum=previous;
