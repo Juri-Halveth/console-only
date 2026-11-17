@@ -99,6 +99,10 @@ class KorridotUIStaticTests(unittest.TestCase):
                 shutil.copyfile(ROOT / 'src' / name, fixture / 'src' / name)
             builder = fixture / 'tools/build_preview.py'
             shutil.copyfile(ROOT / 'tools/build_preview.py', builder)
+            # These are the public source records used by the offline timeline.
+            # An isolated build must also verify them before copying the module.
+            shutil.copytree(ROOT / 'tools/gg24', fixture / 'tools/gg24',
+                            ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
             result = subprocess.run([sys.executable, '-B', str(builder)],
                                     cwd=fixture, capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr[:1000])
