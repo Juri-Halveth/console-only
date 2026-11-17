@@ -2,6 +2,7 @@
   'use strict';
   // KORRIDOT: a single projected 3D scene. All geometry, membranes and receipts
   // inhabit the same XYZ frame. T is the ORDER of recorded receipts, not invented data.
+  const fundingRail=!!window.location?.search&&new URLSearchParams(window.location.search).get('spur')==='gg24';
   const canvas = document.getElementById('world');
   // KORRIDOT_SPACEFLIGHT_V1 — shared optics, open star volume, free camera.
   const ctx = canvas.getContext('2d', { alpha: true });
@@ -148,7 +149,7 @@
   const simulationPause=document.getElementById('simulationPause');
   const simulationReadout=document.getElementById('simulationReadout');
   const simulationSpeed=document.getElementById('simulationSpeed');
-  let simulationAPI=null,simulationModel=null,simulationMode=window.location?.search && new URLSearchParams(window.location.search).get('modell')==='doppelacht'?'doppelacht':'material';
+  let simulationAPI=null,simulationModel=null,simulationMode=fundingRail?'off':window.location?.search && new URLSearchParams(window.location.search).get('modell')==='doppelacht'?'doppelacht':'material';
   let simulationError='',simulationNotice='',watchStarted=false;
   // Existing solver preset: only damping changes from .12 to .04; fixed step remains 1/90.
   const simulationPreset=Object.freeze({id:'movement-first-20261117',seed:20261117,damping:.04});
@@ -158,7 +159,11 @@
   let materialObservations=[];
   const isMaterialMode=()=>simulationMode==='material'||simulationMode==='doppelacht';
   const simulationStep=()=>isMaterialMode()?1/120:1/90;
-  let spatialConfig={coupling:1},spatialTools=null,followOrigin=null;
+  let spatialConfig={coupling:1},spatialTools=null,followOrigin=null,approach=null;
+  const pointView=()=>simulationMode==='doppelacht'&&spatialConfig.layout==='shell'&&Number.isFinite(materialView.distance)&&!evidenceVisible&&!btcFlight.active;
+  function applyDistance(d){
+    approach.stop();materialView.distance=d;positionSpatial({yaw:yawOffset,pitch:pitchOffset});spatialTools.meter(d);drawScene();
+  }
   const renderMaterial=(ctx,state,options,w,h)=>simulationMode==='doppelacht'
     ?simulationAPI.spatialView.draw(ctx,state,options,w,h):simulationAPI.materialDraw(ctx,state,options,w,h);
   function syncMaterialControls(){
@@ -172,19 +177,36 @@
       const row=document.getElementById(id)?.closest?.('label');if(row)row.hidden=is3D;
     }
     const color=document.getElementById('materialColor');if(color)color.value=materialView.colorMode;
-    spatialTools?.sync(is3D,spatialConfig.coupling,materialView.followId,spatialConfig.count??960,{yaw:yawOffset,pitch:pitchOffset});
+    spatialTools?.sync(is3D,spatialConfig.coupling,materialView.followId,spatialConfig.count??960,{yaw:yawOffset,pitch:pitchOffset,layout:spatialConfig.layout??'classic',distance:materialView.distance});
   }
   function spatialCamera(name) {
-    const angles=simulationAPI.spatialView.presets[name],at=simulationState({exact:false})?.materialCells.find(c=>c.id===materialView.followId);
+    approach?.stop();
+    if(spatialConfig.layout==='shell'&&(!Number.isFinite(materialView.distance)||materialView.followId&&materialView.distance>32))
+      materialView.distance=simulationAPI.spatialView.overviewDistance;
+    positionSpatial(simulationAPI.spatialView.presets[name]);drawScene();
+  }
+  function positionSpatial(angles) {
+    const at=materialView.followId?simulationModel?.point(Number(materialView.followId.slice(1))):null;
     const cx=simulationOrigin.x+(at?.x??0)*materialScale,cy=simulationOrigin.y+(at?.y??0)*materialScale,cz=simulationOrigin.z+(at?.z??0)*materialScale;
-    const d=32,cp=Math.cos(angles.pitch);shipX=cx-d*Math.sin(angles.yaw)*cp;
+    const d=Number.isFinite(materialView.distance)?materialScale*materialView.distance:32,cp=Math.cos(angles.pitch);shipX=cx-d*Math.sin(angles.yaw)*cp;
     shipY=cy-d*Math.sin(angles.pitch);cameraZ=cz-d*Math.cos(angles.yaw)*cp;
     yawOffset=targetYaw=angles.yaw;pitchOffset=targetPitch=angles.pitch;roll=0;
     targetZ=null;motion=false;routeAutopilot=false;shipVX=shipVY=shipVZ=flightSpeed=wheelImpulse=opticalBeta=0;
-    followOrigin=at??null;drawScene();
+    followOrigin=at??null;
   }
   function setupSpatialTools(){
+    spatialConfig=simulationAPI.spatial.entryConfiguration();
+    const optics=simulationAPI.spatialView;approach=optics.approach();
+    optics.distanceControls(canvas,{active:pointView,read:()=>materialView.distance,set:applyDistance,
+      rotate:(dx,dy)=>{approach.stop();positionSpatial({yaw:yawOffset+dx*.008,pitch:clamp(pitchOffset+dy*.008,-Math.PI/2,Math.PI/2)});spatialTools.manual();drawScene();},
+      tap:e=>{if(materialView.distance>4*optics.overviewDistance){applyDistance(optics.overviewDistance);return;}
+        const rect=canvas.getBoundingClientRect(),px=e.clientX-rect.left,py=e.clientY-rect.top;let nearest=null,limit=12;
+        for(const p of materialObservations){const d=Math.hypot(p.x-px,p.y-py);if(d<limit){limit=d;nearest=p;}}
+        if(nearest)spatialTools.pick(nearest.id);}
+    });
     spatialTools=simulationAPI.spatialView.controls(document.querySelector?.('[data-d8-controls]'),{
+      layout:name=>{const {layout,...rest}=spatialConfig;spatialConfig=name==='shell'?{...rest,layout:'shell'}:rest;resetSimulation();},
+      distance:applyDistance,
       coupling:value=>{spatialConfig={...spatialConfig,coupling:value};resetSimulation();},
       camera:spatialCamera,follow:id=>{materialView.followId=id;followOrigin=null;if(id)spatialCamera('oblique');else drawScene();}
     });
@@ -277,7 +299,7 @@
     simulationDebt=0;simulationLast=null;
     simulationError='';simulationNotice='';
     simulationModel=simulationMode==='off'||!simulationAPI?null:simulationAPI.create(simulationMode,simulationMode==='doppelacht'?spatialConfig:simulationMode==='material'?materialStartConfig():simulationMode==='experimental'?{seed:simulationPreset.seed}:{});
-    if(simulationMode==='doppelacht'&&simulationModel){materialView.colorMode='bluegold';materialView.followId=null;spatialCamera('oblique');}
+    if(simulationMode==='doppelacht'&&simulationModel){materialView.colorMode='bluegold';materialView.followId=null;approach.begin(materialView,spatialConfig);positionSpatial(simulationAPI.spatialView.presets.oblique);}else{approach?.stop();delete materialView.distance;}
     syncMaterialControls();
     syncRecordingState();simulationStatus();drawScene();
   }
@@ -290,6 +312,7 @@
   document.getElementById('simulationReset')?.addEventListener('click',resetSimulation);
   document.getElementById('simulationHome')?.addEventListener('click',()=>{
     if(btcFlight.active)stopBitcoinFlight();
+    if(approach){approach.stop();delete materialView.distance;syncMaterialControls();}
     motion=false;routeAutopilot=false;targetZ=null;cameraZ=simulationOrigin.z-28;shipX=shipY=shipVX=shipVY=shipVZ=flightSpeed=wheelImpulse=opticalBeta=0;
     yawOffset=pitchOffset=targetYaw=targetPitch=roll=0;drawScene();canvas.focus({preventScroll:true});
   });
@@ -315,7 +338,7 @@
   document.getElementById('simulationJSON')?.addEventListener('click',()=>{if(simulationModel)downloadBlob(new Blob([JSON.stringify(simulationPayload(),null,2)],{type:'application/json'}),'HALVETH_'+simulationMode+'_model.json');});
   function projectMaterial(point,id,outWidth=width,outHeight=height){
     const world={x:simulationOrigin.x+point.x*materialScale,y:simulationOrigin.y+point.y*materialScale,z:simulationOrigin.z+(point.z||0)*materialScale};
-    if(spaceOptics)return spaceOptics.projectPointImages(world,view,outWidth,outHeight,lens,opticalState,{near:.8,far:10000,sourceId:'simulation:material:'+id});
+    if(spaceOptics)return spaceOptics.projectPointImages(world,view,outWidth,outHeight,lens,opticalState,{near:simulationMode==='doppelacht'&&spatialConfig.layout==='shell'?.12:.8,far:simulationMode==='doppelacht'&&spatialConfig.layout==='shell'?24000:10000,sourceId:'simulation:material:'+id});
     return outWidth===width&&outHeight===height?[project(world)].filter(Boolean):[];
   }
   function materialRenderOptions(w=width,h=height){return {...materialView,mode:materialView.mode==='flight'?'rods':materialView.mode,background:false,project:(point,id)=>projectMaterial(point,id,w,h)};}
@@ -359,13 +382,14 @@
            !Number.isFinite(clock.speed)||clock.speed<0||clock.speed>16)throw Error('Ungültige 3D-Uhr');
         if(native&&(!observation||!restoredView||!['rods','field','cells','flight'].includes(restoredView.mode)||
            !['bluegold','rgb'].includes(restoredView.colorMode)||!Number.isFinite(restoredView.symbolScale)||restoredView.symbolScale<.4||restoredView.symbolScale>2||
+           (Object.hasOwn(restoredView,'distance')&&(!simulationAPI.spatialView.validDistance(restoredView.distance)||packet.configuration.layout!=='shell'))||
            (restoredView.followId!=null&&!packet.materialCells.some(c=>c.id===restoredView.followId))||
            !validCamera(observation)))throw Error('Ungültige 3D-Ansicht');
         simulationMode='doppelacht';simulationModel=next;spatialConfig={...packet.configuration};simulationDebt=clock.credit;
         simulationSpeed.value=String(clock.speed);simulationLast=null;simulationPlaying=false;simulationError='';simulationNotice='';watchStarted=true;
+        approach.stop();delete materialView.distance;
         Object.assign(materialView,{mode:'rods',colorMode:'bluegold',symbolScale:1,followId:null},restoredView??{});
-        spatialCamera('oblique');
-        if(native)restoreCamera(observation);
+        if(native)restoreCamera(observation);else spatialCamera('oblique');
         document.getElementById('materialView').value=materialView.mode;document.getElementById('materialSize').value=String(materialView.symbolScale);
         syncRecordingState();syncMaterialControls();simulationStatus();drawScene();return;
       }
@@ -395,6 +419,7 @@
     const dt=simulationLast===null?0:Math.max(0,(time-simulationLast)/1000);simulationLast=time;
     const speed=Number(simulationSpeed?.value||1);
     if(!simulationModel||!simulationPlaying||!(speed>0))return;
+    if(pointView()&&approach.update(materialView,dt)){positionSpatial({yaw:yawOffset,pitch:pitchOffset});spatialTools.meter(materialView.distance);}
     simulationDebt+=dt*speed;let count=0;
     const h=simulationStep();
     while(simulationDebt+1e-12>=h&&count<240){
@@ -537,6 +562,7 @@
   }
   function label(row) {
     const e = row.entry;
+    if (e.kind.startsWith('funding-')) return e.name;
     if (e.kind === 'seed') return 'Keim · ' + e.name;
     if (e.kind === 'branch') return 'Ast · ' + e.name;
     if (e.kind === 'note') return 'Beschreibung · ' + e.name;
@@ -591,6 +617,16 @@
     const row = ordered.find(x => x.key === selected);
     if (!row) { selected = null; showDetail(); return; }
     const e = row.entry;
+    if(e.kind.startsWith('funding-')){
+      const tx=e.kind!=='funding-report';
+      line(detail,tx?'OP MAINNET · TRANSAKTIONSBELEG':'GITCOIN GOVERNANCE · VERÖFFENTLICHTER BERICHT','small');
+      line(detail,e.name,'h3');
+      line(detail,(tx?'Blockzeit ':'Veröffentlicht ')+new Date(e.at).toISOString().replace('T',' ').replace(/\.\d{3}Z$/,' UTC'));
+      if(e.asOf)line(detail,'Zahlenstand '+e.asOf);
+      for(const [key,value] of e.metrics)line(detail,key+' · '+value);
+      const a=document.createElement('a');a.textContent=tx?'Transaktion im Blockexplorer öffnen ↗':'Originalbericht lesen ↗';a.href=e.sourceUrl;a.target='_blank';a.rel='noopener noreferrer';detail.append(a);
+      line(detail,(tx?'Blockhash ':'SHA-256 des Forum-Beitrags (HTML) ')+e.sourceDigest,'code');return;
+    }
     fieldPanel.hidden = !(e.name === 'Funktionsatlas' || e.node === 'Funktionsatlas');
     line(detail, prefix(row), 'small');
     line(detail, label(row), 'h3');
@@ -1372,16 +1408,17 @@
     }
     if (!observer.ready) observerHome();
     let usingCosmos=false;
-    if(cosmosRenderer&&cosmosEnabled){
+    const viewingPoint=pointView();
+    if(cosmosRenderer&&cosmosEnabled&&!viewingPoint){
       try{usingCosmos=cosmosRenderer.render(view,width,height,lens,fps>0&&fps<42?.5:quality,opticalState);}
       catch(error){cosmosRenderer.dispose();cosmosRenderer=null;cosmosError=error.message;updateCosmosButton();}
     }
     if(cosmosCanvas)cosmosCanvas.style.visibility=usingCosmos?'visible':'hidden';
-    if(usingCosmos)ctx.clearRect(0,0,width,height);else drawBackdrop();
+    if(viewingPoint){ctx.fillStyle='#030509';ctx.fillRect(0,0,width,height);}else if(usingCosmos)ctx.clearRect(0,0,width,height);else drawBackdrop();
     const visible=ordered.slice(0,Number(slider.value));
     const drawable=[];
 
-    if(!usingCosmos)drawStars();
+    if(!usingCosmos&&!viewingPoint)drawStars();
     if(evidenceVisible)drawSimulationWithPlanet();else drawSimulation();
     if(!isMaterialMode()||evidenceVisible)drawEvidenceRoute();
     if(evidenceVisible){
@@ -1424,7 +1461,7 @@
       button.dataset.key=row.key;
       const num=document.createElement('b');num.textContent=String(index+1).padStart(2,'0');
       const body=document.createElement('span'),strong=document.createElement('strong'),small=document.createElement('small');
-      strong.textContent=label(row);small.textContent=new Date(row.at).toLocaleString('de-DE')+' · Demo';
+      strong.textContent=label(row);small.textContent=row.entry.kind.startsWith('funding-')?new Date(row.at).toLocaleDateString('de-DE',{timeZone:'UTC'})+(row.entry.kind!=='funding-report'?' · Blockzeit':' · Veröffentlichung'):new Date(row.at).toLocaleString('de-DE')+' · Demo';
       body.append(strong,small);button.append(num,body);li.append(button);timeline.append(li);
       button.onclick=()=>focusRow(index);
     });
@@ -1623,6 +1660,10 @@
       releaseReverse();releaseBrake();}
   });
   function animate(time) {
+    if(simulationMode==='doppelacht'&&Number.isFinite(materialView.distance)&&
+       (keys.size||thrustHeld||reverseHeld||motion||routeAutopilot||btcFlight.active||evidenceVisible)){
+      approach.stop();delete materialView.distance;spatialTools.meter(undefined);
+    }
     simulationTick(time);
     const dt=lastFrame?clamp((time-lastFrame)/1000,0,.05):0;
     lastFrame=time;
@@ -1725,6 +1766,21 @@
     projection:()=>{const p=project(surface(cameraZ+40,.8));return p ? {x:p.x,y:p.y,depth:p.depth}:null;}
   });
 
+  async function openFundingRail(){
+    try{
+      const {reports}=await import('./gg24-funding.mjs');
+      ordered=reports.map((r,i)=>({key:'gg24-'+i,at:r.at,source:r.kind!=='funding-report'?'OP MAINNET':'GITCOIN',entry:{...r,seq:i+1}}));
+      slider.max=String(ordered.length);slider.value=String(ordered.length);selected=ordered[ordered.length-1].key;
+      showEvidence(true);setWorkshop(true);
+      const title=timeline.previousElementSibling;if(title?.tagName==='H2')title.textContent='GG24 · Zeitspur der Berichte';
+      const intro=document.querySelector('.public-ready');if(intro)intro.hidden=true;
+      connection.textContent='GG24 · Gitcoin und OP Mainnet';connection.classList.remove('off');
+      heads.textContent='Zwei Berichte (USD) · Antrag und Übertragung (DAI) · T nach Quelle';
+      refreshTimeline();redraw();showDetail();
+    }catch(error){connection.textContent='Förder-Zeitspur konnte nicht geladen werden · '+error.message;}
+  }
+
+  if(fundingRail){openFundingRail();return;}
   const data = {"garden":[{"seq":1,"kind":"seed","name":"Konsole","at":"2026-11-13T17:01:00+00:00","hash":"beispiel-g1"},{"seq":2,"kind":"branch","name":"Welten","at":"2026-11-13T17:02:00+00:00","hash":"beispiel-g2","parent":"Konsole"},{"seq":3,"kind":"branch","name":"Quellen","at":"2026-11-13T17:03:00+00:00","hash":"beispiel-g3","parent":"Konsole"},{"seq":4,"kind":"note","name":"Welten","at":"2026-11-13T17:04:00+00:00","hash":"beispiel-g4","text":"Ein Raum für ausdrücklich gestartete Experimente."},{"seq":5,"kind":"branch","name":"Erster Versuch","at":"2026-11-13T17:05:00+00:00","hash":"beispiel-g5","parent":"Welten"},{"seq":6,"kind":"note","name":"Quellen","at":"2026-11-13T17:06:00+00:00","hash":"beispiel-g6","text":"Quellen werden erst nach lokaler Aufnahme sichtbar."}],"runs":[{"seq":1,"kind":"run-start","node":"Welten","at":"2026-11-13T17:07:00+00:00","hash":"beispiel-r1","runId":"beispiel-lauf","argv":["python","-B","-c","print(\"Hallo aus einem Lauf\")"]},{"seq":2,"kind":"run-end","node":"Welten","at":"2026-11-13T17:08:00+00:00","hash":"beispiel-r2","runId":"beispiel-lauf","result":"EXITED","exitCode":0,"output":"Hallo aus einem Lauf\n"}],"gardenHead":"beispiel-g6","runHead":"beispiel-r2"};
   snapshot = data; ordered = entryList(data);
   slider.max = String(ordered.length); slider.value = String(ordered.length);

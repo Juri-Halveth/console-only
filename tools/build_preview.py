@@ -62,9 +62,10 @@ page = page.replace('</style>', public_css + '\n</style>', 1)
 intro = '''<section class="public-ready" aria-labelledby="what-is-korridot">
 <p class="micro">HALVETH / KORRIDOT · INTERAKTIVE OFFLINE-DEMO</p>
 <h2 id="what-is-korridot">Software-Versuche räumlich erleben.</h2>
-<p>Fliege durch einen 3D-Zeitkorridor mit anklickbaren Ereignissen, Zeitpunkten und Ergebnissen. Diese Vorschau verwendet ausschließlich erfundene Beispieldaten.</p>
+<p>Fliege durch einen 3D-Zeitkorridor mit anklickbaren Ereignissen, Zeitpunkten und Ergebnissen. Die Beispielspur enthält erfundene Ereignisse. Die GG24-Spur zeigt zwei öffentliche Gitcoin-Berichte.</p>
 <nav class="public-cta" aria-label="KORRIDOT Einstiege">
 <a class="primary" href="#korridot-demo">Demo erkunden</a>
+<a href="?spur=gg24">GG24 · Förder-Zeitspur</a>
 <a href="#so-funktioniert-es">So funktioniert es</a>
 <a href="https://github.com/Juri-Halveth/console-only">Quellcode &amp; Tests</a>
 <a href="https://juri-halveth.github.io/arbeiten/#contact">Projekt anfragen</a>
@@ -115,6 +116,7 @@ script = script.replace('Die Ansicht zeigt gespeicherte Ereignisse, keine unbeob
                         'Dies sind erfundene Beispielereignisse. Lokale Belege erscheinen hier nicht.')
 start = script.index('  async function poll() {')
 script = script[:start] + (
+    '  if(fundingRail){openFundingRail();return;}\n' +
     '  const data = ' + json.dumps(data, ensure_ascii=False, separators=(',', ':')) + ';\n'
     "  snapshot = data; ordered = entryList(data);\n"
     "  slider.max = String(ordered.length); slider.value = String(ordered.length);\n"
@@ -127,6 +129,9 @@ if "fetch(" in script or 'setInterval(' in script:
 (OUT / 'preview.js').write_text(script, encoding='utf-8', newline='\n')
 # COSMOS pass is purely synthetic and contains no network or Garden access.
 import shutil
+import subprocess, sys
+subprocess.run([sys.executable, '-B', str(ROOT / 'tools/gg24/build_track.py'), '--check', str(ROOT / 'src/gg24-funding.mjs')], check=True)
+shutil.copyfile(ROOT / 'src/gg24-funding.mjs', OUT / 'gg24-funding.mjs')
 shutil.copyfile(ROOT / 'src/cosmos_renderer.mjs', OUT / 'cosmos_renderer.mjs')
 print('docs/index.html und docs/preview.js aus lokalen Vorlagen erzeugt')
 

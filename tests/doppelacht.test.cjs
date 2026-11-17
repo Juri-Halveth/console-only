@@ -93,3 +93,34 @@ test('free evolution measured against the initial finite tubes',()=>{
   assert.ok(measurements.shape[0].families.every(g=>g.fraction===1));
 });
 after(()=>{if(process.env.D8_MEASUREMENTS)fs.writeFileSync(process.env.D8_MEASUREMENTS,JSON.stringify(measurements,null,2));});
+
+test('shell starts at twelve antipodal sites of equal radius and evolves freely',()=>{
+  const simulation=D.create({layout:'shell'}),initial=simulation.snapshot();
+  const centres=Array.from({length:12},()=>[0,0,0]),counts=Array(12).fill(0);
+  initial.materialCells.forEach((cell,i)=>{
+    const site=(i%480)%12;counts[site]++;
+    for(const [k,axis] of ['x','y','z'].entries())centres[site][k]+=cell[axis]/80;
+    assert.ok(Math.abs(Math.hypot(cell.nx,cell.ny,cell.nz)-1)<1e-12);
+  });
+  assert.deepEqual(counts,Array(12).fill(80));
+  for(const [i,c] of centres.entries()){
+    assert.ok(Math.abs(Math.hypot(...c)-3.8)<1e-11);
+    assert.ok(c.every((v,k)=>Math.abs(v-D.shellDirections[i][k]*D.shellRadius)<1e-11));
+    assert.ok(centres.some(other=>c.every((v,k)=>Math.abs(v+other[k])<1e-11)));
+  }
+  simulation.step(.5);const frame=simulation.snapshot();
+  assert.ok(frame.materialCells.every((p,i)=>p.id===initial.materialCells[i].id));
+  assert.ok(frame.materialCells.every((p,i)=>Math.hypot(p.x-initial.materialCells[i].x,p.y-initial.materialCells[i].y,p.z-initial.materialCells[i].z)>1e-5));
+  const restored=D.create(frame.configuration);restored.restore(frame);same(restored.snapshot(),frame);
+  assert.throws(()=>D.create({layout:'other'}));assert.throws(()=>D.create({}).restore(frame));
+});
+test('optical distance changes perspective while preserving the source model',()=>{
+  const V=require(path.join(source,'doppelacht-view.js')),s=D.create({layout:'shell'}),before=s.snapshot();
+  const u={yaw:0,pitch:0},flight=V.approach();flight.begin(u,{layout:'shell'});
+  const at=d=>V.projector({...u,distance:d},900,600);
+  const a={x:1,y:1,z:2},b={x:1,y:1,z:-2};const zoom=at(V.overviewDistance);
+  assert.ok(zoom(b).x>zoom(a).x);assert.equal(u.distance,6400);
+  flight.update(u,.8);assert.equal(u.distance,6400);flight.update(u,6);assert.equal(u.distance,V.overviewDistance);
+  assert.ok(at(.12)({x:0,y:0,z:-1})===null);
+  flight.begin(u,{});assert.equal(u.distance,undefined);same(s.snapshot(),before);
+});

@@ -1,0 +1,177 @@
+{
+  "interim": {
+    "source": {
+      "topic": 24912,
+      "post": 55951,
+      "version": 1,
+      "published": "2025-12-05T19:04:39.610Z",
+      "updated": "2025-12-05T19:04:39.610Z",
+      "bodySHA256": "72c33e777c5990bc6e75e1d37d7403255167c96c3f3a0c5327391bef0443d10a",
+      "url": "https://gov.gitcoin.co/t/gg24-public-goods-tooling-development-round-december-2025-progress-report/24912/1"
+    },
+    "asOf": "2025-12-04",
+    "growthCount": 8,
+    "growthUSD": 70800,
+    "pilotCount": 4,
+    "pilotUSD": 11000,
+    "totalCount": 12,
+    "totalUSD": 81800
+  },
+  "final": {
+    "source": {
+      "topic": 25276,
+      "post": 56689,
+      "version": 1,
+      "published": "2026-05-27T15:42:42.600Z",
+      "updated": "2026-05-27T15:44:24.534Z",
+      "bodySHA256": "fa953dbd55a591181e81e8a9726ee668c11d91a4bcdcd060bf8cdbc84ceef194",
+      "url": "https://gov.gitcoin.co/t/gg24-public-goods-tooling-development-round-full-retrospective/25276/1"
+    },
+    "summaryCount": 12,
+    "summaryProactiveUSD": 83800,
+    "pilotTextCount": 4,
+    "pilotTextUSD": 11000,
+    "summaryRetroUSD": 40000,
+    "tables": {
+      "growth": {
+        "rows": [
+          [
+            "Silvi SDK: Open and Permissionless Reforestation Infrastructure",
+            13000
+          ],
+          [
+            "Giveth as a Base Mini App",
+            10900
+          ],
+          [
+            "Gas Killer: Super Scaling Ethereum Computation",
+            10000
+          ],
+          [
+            "The Commons: A Builder Residency and Pop-Up Cities Platform",
+            9900
+          ],
+          [
+            "Solidarity Fund",
+            7000
+          ],
+          [
+            "Enhancing Ecocerts: From Creation to Cross-Chain Funding",
+            7000
+          ],
+          [
+            "TrustGraph: An Interoperable Trust Layer for Ethereum",
+            7000
+          ],
+          [
+            "The Regen Atlas: Actions View",
+            6000
+          ]
+        ],
+        "totalRowUSD": 70800
+      },
+      "pilot": {
+        "rows": [
+          [
+            "Funding Readiness Framework by CARBON Copy",
+            3500
+          ],
+          [
+            "Relay Funder: Aid to Refugee Communities",
+            3000
+          ],
+          [
+            "Impact Cards: Interoperable, Attested",
+            2500
+          ],
+          [
+            "Gyralis",
+            2000
+          ],
+          [
+            "Taiwan Hypercerts Dashboard",
+            2000
+          ]
+        ],
+        "totalRowUSD": 13000
+      },
+      "retro": {
+        "rows": [
+          [
+            "Prosperity Pass",
+            8485
+          ],
+          [
+            "Gainforest (Ecocerts)",
+            3099
+          ],
+          [
+            "Regen Atlas",
+            3276
+          ],
+          [
+            "Silvi",
+            0
+          ],
+          [
+            "Impact Certificate Miner",
+            6680
+          ],
+          [
+            "Relay Funder",
+            4230
+          ],
+          [
+            "Funding the Commons",
+            0
+          ],
+          [
+            "Impact Cards",
+            3838
+          ],
+          [
+            "Solidarity Fund",
+            297
+          ],
+          [
+            "DAO.archi",
+            5145
+          ],
+          [
+            "Giveth",
+            0
+          ],
+          [
+            "Taiwan Hypercerts",
+            2794
+          ],
+          [
+            "Carbon FRF",
+            1358
+          ],
+          [
+            "P2E Inferno",
+            200
+          ],
+          [
+            "Hup",
+            200
+          ],
+          [
+            "Gas Killer",
+            0
+          ],
+          [
+            "ClearFund",
+            200
+          ],
+          [
+            "Learn for Impact",
+            200
+          ]
+        ],
+        "totalRowUSD": null
+      }
+    }
+  }
+}

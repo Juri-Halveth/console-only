@@ -168,7 +168,7 @@ class KorridotUIStaticTests(unittest.TestCase):
         self.assertContains('cosmosModule.createStarGeometry()',JS)
         self.assertContains('cosmosModule.createLocalStars(view)',JS)
         self.assertContains('spaceOptics.projectPointImages(world,view,width,height,lens,opticalState',JS)
-        self.assertContains('if(!usingCosmos)drawStars()',JS)
+        self.assertContains('if(!usingCosmos&&!viewingPoint)drawStars()',JS)
         self.assertIsNone(re.search(r'\bdrawFilaments\s*\(\s*\)\s*;',JS),
                           'The obsolete filament layer must not be drawn')
         self.assertOmits('function drawTube(',JS)

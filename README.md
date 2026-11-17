@@ -182,3 +182,7 @@ auf die Dokumentation oder Portale verweisen, behalten ihre eigenen Rechte.
 ## Doppelacht im Flugraum
 
 In der Vorschau dieses Branches öffnet die Abfrage `?modell=doppelacht` direkt die 3D-Szene. Unter **Mehr** stehen vier Kameras, Zellverfolgung, Kopplung, JSON und 4K bereit. [Modell und Prüftoleranzen](DOPPELACHT.md).
+
+[GG24-Förderberichte im Korridor](https://juri-halveth.github.io/console-only/?spur=gg24) öffnet nach Veröffentlichung dieser Fassung zwei datierte Berichtsstände und eine anhand von zwei Logs geprüfte Übertragung von 2.000 DAI auf OP Mainnet. Für die jeweilige lokale Vorschau hängt man `?spur=gg24` an die Startadresse an. Die Zeitspur bindet die öffentlichen Quellen und zeigt ihre ausgewiesenen USD-Beträge. [Lichtpunkt und Kamerabedienung](DOPPELACHT.md#lichtpunkt-und-rundumblick).
+
+[Förderberichte, Blöcke und IPFS-Titel selbst nachprüfen](tools/gg24/README.md).
