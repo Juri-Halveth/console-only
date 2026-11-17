@@ -94,7 +94,7 @@ class KorridotUIStaticTests(unittest.TestCase):
             fixture = Path(temporary)
             (fixture / 'src').mkdir()
             (fixture / 'tools').mkdir()
-            module_names = sorted(path.name for path in (ROOT / 'src').glob('*.mjs')) + ['particle-dynamics.js','reference-physics.js','models.js','material-engine.js','material-model.js','material-view.js']
+            module_names = sorted(path.name for path in (ROOT / 'src').glob('*.mjs')) + ['particle-dynamics.js','reference-physics.js','models.js','material-engine.js','material-model.js','material-view.js','doppelacht-source.js','doppelacht.js','doppelacht-view.js']
             for name in ('garden_live.html', 'garden_live.js', *module_names):
                 shutil.copyfile(ROOT / 'src' / name, fixture / 'src' / name)
             builder = fixture / 'tools/build_preview.py'

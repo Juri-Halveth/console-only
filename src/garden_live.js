@@ -148,7 +148,7 @@
   const simulationPause=document.getElementById('simulationPause');
   const simulationReadout=document.getElementById('simulationReadout');
   const simulationSpeed=document.getElementById('simulationSpeed');
-  let simulationAPI=null,simulationModel=null,simulationMode='material';
+  let simulationAPI=null,simulationModel=null,simulationMode=window.location?.search && new URLSearchParams(window.location.search).get('modell')==='doppelacht'?'doppelacht':'material';
   let simulationError='',simulationNotice='',watchStarted=false;
   // Existing solver preset: only damping changes from .12 to .04; fixed step remains 1/90.
   const simulationPreset=Object.freeze({id:'movement-first-20261117',seed:20261117,damping:.04});
@@ -156,11 +156,49 @@
   const simulationOrigin={x:0,y:0,z:70},simulationScale=8,materialScale=3.2;
   const materialView={mode:'rods',colorMode:'rgb',symbolScale:1,annotations:false};
   let materialObservations=[];
-  const simulationStep=()=>simulationMode==='material'?1/120:1/90;
+  const isMaterialMode=()=>simulationMode==='material'||simulationMode==='doppelacht';
+  const simulationStep=()=>isMaterialMode()?1/120:1/90;
+  let spatialConfig={coupling:1},spatialTools=null,followOrigin=null;
+  const renderMaterial=(ctx,state,options,w,h)=>simulationMode==='doppelacht'
+    ?simulationAPI.spatialView.draw(ctx,state,options,w,h):simulationAPI.materialDraw(ctx,state,options,w,h);
+  function syncMaterialControls(){
+    const is3D=simulationMode==='doppelacht';
+    if(simulationSelect)simulationSelect.value=simulationMode;
+    const controls=document.getElementById('materialControls');if(controls)controls.hidden=!isMaterialMode();
+    const png=document.getElementById('simulationPNG');if(png)png.disabled=!isMaterialMode();
+    const caption=document.getElementById('materialCaption');if(caption)caption.textContent=is3D?'Doppelacht · '+(spatialConfig.count??960)+' Zellen im Raum':'Material · 2D-Rechnung, räumliche Beobachtung';
+    const note=document.getElementById('legacyMaterialNote');if(note)note.hidden=is3D;
+    for(const id of ['materialDrive','materialCoupling','materialAnnotations']){
+      const row=document.getElementById(id)?.closest?.('label');if(row)row.hidden=is3D;
+    }
+    const color=document.getElementById('materialColor');if(color)color.value=materialView.colorMode;
+    spatialTools?.sync(is3D,spatialConfig.coupling,materialView.followId,spatialConfig.count??960,{yaw:yawOffset,pitch:pitchOffset});
+  }
+  function spatialCamera(name) {
+    const angles=simulationAPI.spatialView.presets[name],at=simulationState({exact:false})?.materialCells.find(c=>c.id===materialView.followId);
+    const cx=simulationOrigin.x+(at?.x??0)*materialScale,cy=simulationOrigin.y+(at?.y??0)*materialScale,cz=simulationOrigin.z+(at?.z??0)*materialScale;
+    const d=32,cp=Math.cos(angles.pitch);shipX=cx-d*Math.sin(angles.yaw)*cp;
+    shipY=cy-d*Math.sin(angles.pitch);cameraZ=cz-d*Math.cos(angles.yaw)*cp;
+    yawOffset=targetYaw=angles.yaw;pitchOffset=targetPitch=angles.pitch;roll=0;
+    targetZ=null;motion=false;routeAutopilot=false;shipVX=shipVY=shipVZ=flightSpeed=wheelImpulse=opticalBeta=0;
+    followOrigin=at??null;drawScene();
+  }
+  function setupSpatialTools(){
+    spatialTools=simulationAPI.spatialView.controls(document.querySelector?.('[data-d8-controls]'),{
+      coupling:value=>{spatialConfig={...spatialConfig,coupling:value};resetSimulation();},
+      camera:spatialCamera,follow:id=>{materialView.followId=id;followOrigin=null;if(id)spatialCamera('oblique');else drawScene();}
+    });
+  }
+  function trackSpatialFrame(){
+    if(simulationMode!=='doppelacht'||!materialView.followId||!simulationModel)return;
+    const p=simulationModel.point(Number(materialView.followId.slice(1)));if(!p)return;
+    if(followOrigin){shipX+=(p.x-followOrigin.x)*materialScale;shipY+=(p.y-followOrigin.y)*materialScale;cameraZ+=(p.z-followOrigin.z)*materialScale;}
+    followOrigin=p;
+  }
   const materialConfig={particles:960,seed:170117,nematic:true,drive:.95};
   let materialDriveValue=.95,materialCouplingValue=.0015;
   const materialStartConfig=()=>({...materialConfig,drive:materialDriveValue,rodCoupling:materialCouplingValue});
-  const simulationCodeVersion=Object.freeze({"releaseId":"HALVETH_INTEGRATION_RC_20261117","codeHashes":{"models.js":"8f4c0d9174a53681bab50bb74549fd28c4cd44c7c9569d4c3f4086c5fdb61383","reference-physics.js":"ae587d572d23818fb3974f7644abe150ca246e492a71f4e46d19352d935e06c9","particle-dynamics.js":"cbf8d00c18ffcb8fc4d2d0416562b9bbedc7fdba07a998b14bf93bd9e76ab701","material-engine.js":"7f6225646e7296259e4a4ffb66497d23f061801b349db05d8d7fc7f42575e19f","material-model.js":"4f8669e83a0ab22c038f2f05f38e347c488c4ae7d949a051df8e81197ede3bf2","material-view.js":"940304fef5da33b7a90f39c7215d09c60ae10a4fa19b96d90b1be56823446203"}});
+  const simulationCodeVersion=Object.freeze({"releaseId":"HALVETH_INTEGRATION_RC_20261117","codeHashes":{"models.js":"8f4c0d9174a53681bab50bb74549fd28c4cd44c7c9569d4c3f4086c5fdb61383","reference-physics.js":"ae587d572d23818fb3974f7644abe150ca246e492a71f4e46d19352d935e06c9","particle-dynamics.js":"cbf8d00c18ffcb8fc4d2d0416562b9bbedc7fdba07a998b14bf93bd9e76ab701","material-engine.js":"7f6225646e7296259e4a4ffb66497d23f061801b349db05d8d7fc7f42575e19f","material-model.js":"072d81f3ff8020647fa84695912e7cac9cb952846a99f18c57021b8f157a3870","material-view.js":"940304fef5da33b7a90f39c7215d09c60ae10a4fa19b96d90b1be56823446203"}});
   function simulationState(options){return simulationModel?simulationModel.snapshot(options):null;}
   const watchPause=document.getElementById('watchPause'),watchReset=document.getElementById('watchReset');
   const watchStatus=document.getElementById('watchStatus'),workshop=document.getElementById('consoleWorkshop');
@@ -177,13 +215,13 @@
   workshopToggle?.addEventListener('click',()=>setWorkshop(workshop.hidden));
   document.getElementById('workshopClose')?.addEventListener('click',()=>setWorkshop(false));
   workshop?.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();setWorkshop(false);}});
-  document.getElementById('consoleLanguage')?.addEventListener('change',event=>{language=words[event.target.value]?event.target.value:'de';simulationStatus();});
+  document.getElementById('consoleLanguage')?.addEventListener('change',event=>{language=words[event.target.value]?event.target.value:'de';spatialTools?.translate(language);simulationStatus();});
   function simulationStatus(){
     const d=simulationModel?.diagnostics(),w=words[language];
-    const label={material:'Material / Nematik · 2D',experimental:'Medium / Kopplung',newton:'Newton',inspiral:'GW-Inspiral'}[simulationMode]||'Modell aus';
+    const label={doppelacht:'Doppelacht · 3D',material:'Material / Nematik · 2D',experimental:'Medium / Kopplung',newton:'Newton',inspiral:'GW-Inspiral'}[simulationMode]||'Modell aus';
     const time=Number.isFinite(d?.time)?d.time:(simulationState({field:false})?.time||0),speed=Number(simulationSpeed?.value||1);
     const message=simulationError?'Modellfehler: '+simulationError:d?`${w.simulation} · ${label} · t=${time.toFixed(3)} s · ×${speed}`+(d.status==='MODEL_LIMIT'?` · ${w.limit} · ${w.reset}`:'')+(simulationDebt>simulationStep()?` · Rückstand ${simulationDebt.toFixed(2)} s`:''):simulationAPI?'Modell AUS · Garden-Daten bleiben getrennt':'Simulation wird geladen …';
-    if(simulationReadout)simulationReadout.textContent=message+(d?` · Umläufe ${(d.orbitalTurns||0).toFixed(3)}`:'');
+    if(simulationReadout)simulationReadout.textContent=message+(d&&simulationMode!=='doppelacht'?` · Umläufe ${(d.orbitalTurns||0).toFixed(3)}`:'');
     if(watchStatus)watchStatus.textContent=message+(simulationNotice?' · '+simulationNotice:'');
     if(simulationPause)simulationPause.textContent=simulationPlaying?'Modell pausieren':'Modell fortsetzen';
     if(watchPause){watchPause.textContent=simulationPlaying?w.pause:reducedMotion&&!watchStarted?w.start:w.continue;watchPause.setAttribute('aria-pressed',String(!simulationPlaying));}
@@ -238,12 +276,12 @@
   function resetSimulation(){
     simulationDebt=0;simulationLast=null;
     simulationError='';simulationNotice='';
-    simulationModel=simulationMode==='off'||!simulationAPI?null:simulationAPI.create(simulationMode,simulationMode==='material'?materialStartConfig():simulationMode==='experimental'?{seed:simulationPreset.seed}:{});
-    const controls=document.getElementById('materialControls');if(controls)controls.hidden=simulationMode!=='material';
-    const png=document.getElementById('simulationPNG');if(png)png.disabled=simulationMode!=='material';
+    simulationModel=simulationMode==='off'||!simulationAPI?null:simulationAPI.create(simulationMode,simulationMode==='doppelacht'?spatialConfig:simulationMode==='material'?materialStartConfig():simulationMode==='experimental'?{seed:simulationPreset.seed}:{});
+    if(simulationMode==='doppelacht'&&simulationModel){materialView.colorMode='bluegold';materialView.followId=null;spatialCamera('oblique');}
+    syncMaterialControls();
     syncRecordingState();simulationStatus();drawScene();
   }
-  import('./simulation_models.mjs').then(api=>{simulationAPI=api;if(simulationMode!=='off')resetSimulation();})
+  import('./simulation_models.mjs').then(api=>{simulationAPI=api;setupSpatialTools();if(simulationMode!=='off')resetSimulation();})
     .catch(error=>{simulationError='Modul nicht geladen: '+error.message;simulationPlaying=false;simulationStatus();});
   if(simulationSelect)simulationSelect.addEventListener('change',()=>{simulationMode=simulationSelect.value;resetSimulation();});
   if(simulationPause)simulationPause.addEventListener('click',toggleSimulation);
@@ -256,7 +294,24 @@
     yawOffset=pitchOffset=targetYaw=targetPitch=roll=0;drawScene();canvas.focus({preventScroll:true});
   });
   function downloadBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-  function simulationPayload(){return {schema:'halveth.console-model/2',releaseId:simulationCodeVersion.releaseId,featureRevision:'HALVETH_MATERIAL_INTEGRATION_20261117',codeHashes:simulationCodeVersion.codeHashes,mode:simulationMode,origin:simulationOrigin,scale:simulationMode==='material'?materialScale:simulationScale,preset:simulationMode==='experimental'?simulationPreset:simulationMode==='material'?materialConfig:null,pendingMaterialInputs:simulationMode==='material'?{drive:materialDriveValue,rodCoupling:materialCouplingValue}:undefined,clock:{credit:simulationDebt,step:simulationStep(),speed:Number(simulationSpeed.value),playing:simulationPlaying},observation:{physicalDomain:simulationMode==='material'?'2D material plane; 3D observation camera':'declared model',camera:{...camera()},lens,view:{...materialView}},model:simulationState(),diagnostics:simulationModel.diagnostics(),sourceClass:'SYNTHETIC_MODEL_NOT_GARDEN'};}
+  function validCamera(observation){
+    return observation && ['x','y','z','yaw','pitch','roll'].every(k=>Number.isFinite(observation.camera?.[k])) &&
+      Number.isFinite(observation.lens) && observation.lens>0;
+  }
+  function restoreCamera(observation){
+    if(btcFlight.active)stopBitcoinFlight();
+    motion=false;routeAutopilot=false;targetZ=null;keys.clear();
+    thrustHeld=reverseHeld=brakeHeld=false;pointerStart=null;
+    shipVX=shipVY=shipVZ=flightSpeed=wheelImpulse=opticalBeta=0;
+    const p=observation.camera;shipX=p.x;shipY=p.y;cameraZ=p.z;
+    yawOffset=targetYaw=p.yaw;pitchOffset=targetPitch=p.pitch;roll=p.roll;lens=observation.lens;
+    updateMotionButton();
+  }
+  function simulationPayload(){
+    if(simulationMode==='doppelacht')return {schema:'halveth.console-doppelacht/1',mode:simulationMode,model:simulationState(),
+      clock:{credit:simulationDebt,step:simulationStep(),speed:Number(simulationSpeed.value),playing:simulationPlaying},
+      observation:{view:{...materialView},camera:{...camera()},lens},sourceClass:'SYNTHETIC_MODEL_NOT_GARDEN'};
+    return {schema:'halveth.console-model/2',releaseId:simulationCodeVersion.releaseId,featureRevision:'HALVETH_MATERIAL_INTEGRATION_20261117',codeHashes:simulationCodeVersion.codeHashes,mode:simulationMode,origin:simulationOrigin,scale:simulationMode==='material'?materialScale:simulationScale,preset:simulationMode==='experimental'?simulationPreset:simulationMode==='material'?materialConfig:null,pendingMaterialInputs:simulationMode==='material'?{drive:materialDriveValue,rodCoupling:materialCouplingValue}:undefined,clock:{credit:simulationDebt,step:simulationStep(),speed:Number(simulationSpeed.value),playing:simulationPlaying},observation:{physicalDomain:simulationMode==='material'?'2D material plane; 3D observation camera':'declared model',camera:{...camera()},lens,view:{...materialView}},model:simulationState(),diagnostics:simulationModel.diagnostics(),sourceClass:'SYNTHETIC_MODEL_NOT_GARDEN'};}
   document.getElementById('simulationJSON')?.addEventListener('click',()=>{if(simulationModel)downloadBlob(new Blob([JSON.stringify(simulationPayload(),null,2)],{type:'application/json'}),'HALVETH_'+simulationMode+'_model.json');});
   function projectMaterial(point,id,outWidth=width,outHeight=height){
     const world={x:simulationOrigin.x+point.x*materialScale,y:simulationOrigin.y+point.y*materialScale,z:simulationOrigin.z+(point.z||0)*materialScale};
@@ -268,11 +323,23 @@
     document.getElementById(id)?.addEventListener('input',event=>{materialView[key]=key==='annotations'?!!event.target.checked:key==='symbolScale'?Number(event.target.value):event.target.value;drawScene();});
     document.getElementById(id)?.addEventListener('change',event=>{materialView[key]=key==='annotations'?!!event.target.checked:key==='symbolScale'?Number(event.target.value):event.target.value;drawScene();});
   }
-  for(const [id,key]of [['materialDrive','drive'],['materialCoupling','rodCoupling']])document.getElementById(id)?.addEventListener('change',event=>{const value=Number(event.target.value);if(key==='drive')materialDriveValue=value;else materialCouplingValue=value;});
+  for(const [id,key] of [['materialDrive','drive'],['materialCoupling','rodCoupling']]){
+    document.getElementById(id)?.addEventListener('change',event=>{
+      const input=event.target, value=Number(input.value), drive=key==='drive';
+      if(!input.value.trim()||!Number.isFinite(value)||(drive?Math.abs(value)>1.6:value<0||value>.02)){
+        input.value=String(drive?materialDriveValue:materialCouplingValue);
+        simulationNotice=drive?'Antrieb muss zwischen −1,6 und 1,6 liegen.':'Kopplung muss zwischen 0 und 0,02 liegen.';
+      }else{
+        if(drive)materialDriveValue=value;else materialCouplingValue=value;
+        simulationNotice='';
+      }
+      simulationStatus();
+    });
+  }
   document.getElementById('simulationPNG')?.addEventListener('click',()=>{
-    if(simulationMode!=='material'||!simulationModel||!spaceOptics)return;
+    if(!isMaterialMode()||!simulationModel||!spaceOptics)return;
     const state=simulationState(),before=JSON.stringify(state),out=document.createElement('canvas');out.width=3840;out.height=2160;
-    simulationAPI.materialDraw(out.getContext('2d'),state,{...materialRenderOptions(out.width,out.height),background:true},out.width,out.height);
+    renderMaterial(out.getContext('2d'),state,{...materialRenderOptions(out.width,out.height),background:true},out.width,out.height);
     if(before!==JSON.stringify(simulationState())){simulationError='PNG veränderte Modellzustand';simulationPlaying=false;simulationStatus();return;}
     out.toBlob(blob=>{if(blob)downloadBlob(blob,'HALVETH_MATERIAL_4K_T'+state.tick+'.png');},'image/png');
   });
@@ -283,10 +350,33 @@
     try{
       if(file.size>5000000)throw Error('Material-JSON überschreitet 5 MB');
       const doc=JSON.parse(await file.text());
+      const packet=simulationAPI.spatial.packetFrom(doc);
+      if(packet){
+        const next=simulationAPI.spatial.create(packet.configuration);next.restore(packet);
+        const native=doc.schema==='halveth.console-doppelacht/1';
+        const observation=native?doc.observation:null,restoredView=observation?.view,clock=native?doc.clock:{credit:0,speed:1,step:1/120};
+        if(!clock||clock.step!==1/120||!Number.isFinite(clock.credit)||clock.credit<0||clock.credit>3600||
+           !Number.isFinite(clock.speed)||clock.speed<0||clock.speed>16)throw Error('Ungültige 3D-Uhr');
+        if(native&&(!observation||!restoredView||!['rods','field','cells','flight'].includes(restoredView.mode)||
+           !['bluegold','rgb'].includes(restoredView.colorMode)||!Number.isFinite(restoredView.symbolScale)||restoredView.symbolScale<.4||restoredView.symbolScale>2||
+           (restoredView.followId!=null&&!packet.materialCells.some(c=>c.id===restoredView.followId))||
+           !validCamera(observation)))throw Error('Ungültige 3D-Ansicht');
+        simulationMode='doppelacht';simulationModel=next;spatialConfig={...packet.configuration};simulationDebt=clock.credit;
+        simulationSpeed.value=String(clock.speed);simulationLast=null;simulationPlaying=false;simulationError='';simulationNotice='';watchStarted=true;
+        Object.assign(materialView,{mode:'rods',colorMode:'bluegold',symbolScale:1,followId:null},restoredView??{});
+        spatialCamera('oblique');
+        if(native)restoreCamera(observation);
+        document.getElementById('materialView').value=materialView.mode;document.getElementById('materialSize').value=String(materialView.symbolScale);
+        syncRecordingState();syncMaterialControls();simulationStatus();drawScene();return;
+      }
       if(doc.schema!=='halveth.console-model/2'||doc.mode!=='material'||doc.sourceClass!=='SYNTHETIC_MODEL_NOT_GARDEN')throw Error('Unpassender Materialvertrag');
-      for(const [name,hash]of Object.entries(simulationCodeVersion.codeHashes))if(doc.codeHashes?.[name]!==hash)throw Error('Quellstand weicht ab: '+name);
+      for(const [name,hash] of Object.entries(simulationCodeVersion.codeHashes)){
+        const actual=doc.codeHashes?.[name];
+        if(actual!==hash && !(name==='material-model.js'&&actual==='4f8669e83a0ab22c038f2f05f38e347c488c4ae7d949a051df8e81197ede3bf2'))throw Error('Quellstand weicht ab: '+name);
+      }
       const credit=doc.clock?.credit,speed=doc.clock?.speed;if(!Number.isFinite(credit)||credit<0||credit>3600||!Number.isFinite(speed)||speed<0||speed>16||doc.clock.step!==1/120)throw Error('Ungültiger gespeicherter Modellzeittakt');
       const obs=doc.observation?.view;if(!obs||!['rods','field','cells','flight'].includes(obs.mode)||!['rgb','bluegold'].includes(obs.colorMode)||!Number.isFinite(obs.symbolScale)||obs.symbolScale<.4||obs.symbolScale>2||typeof obs.annotations!=='boolean')throw Error('Ungültige gespeicherte Darstellungswahl');
+      if(!validCamera(doc.observation))throw Error('Ungültige gespeicherte Kamera');
       const next=simulationAPI.create('material',materialConfig);next.restore(doc.model);
       const restored=next.snapshot({exact:false}),hasPending=Object.hasOwn(doc,'pendingMaterialInputs');
       const pending=hasPending?doc.pendingMaterialInputs:{drive:restored.rawEngine.drive,rodCoupling:restored.rawEngine.params.rodCoupling};
@@ -295,7 +385,7 @@
       document.getElementById('materialDrive').value=String(materialDriveValue);document.getElementById('materialCoupling').value=String(materialCouplingValue);
       Object.assign(materialView,obs);document.getElementById('materialView').value=materialView.mode;document.getElementById('materialColor').value=materialView.colorMode;document.getElementById('materialSize').value=String(materialView.symbolScale);document.getElementById('materialAnnotations').checked=materialView.annotations;
       simulationModel=next;simulationMode='material';simulationSelect.value='material';simulationDebt=credit;simulationLast=null;simulationSpeed.value=String(speed);simulationPlaying=false;simulationError='';simulationNotice=hasPending?'':'Älterer Export: keine vorgemerkten Eingaben enthalten; zuletzt berechnete Werte übernommen';watchStarted=true;syncRecordingState();
-      const controls=document.getElementById('materialControls');if(controls)controls.hidden=false;
+      delete materialView.followId;restoreCamera(doc.observation);syncMaterialControls();
       simulationStatus();drawScene();
     }catch(error){simulationNotice='Import abgelehnt, bisheriger Zustand erhalten: '+error.message;simulationStatus();}
     finally{importFile.value='';}
@@ -318,10 +408,10 @@
   function modelPoint(p){return{x:simulationOrigin.x+p.x*simulationScale,y:simulationOrigin.y+p.y*simulationScale,z:simulationOrigin.z+(p.z||0)*simulationScale};}
   function drawSimulation(materialFilter=null,appendObservations=false,occluder=null){
     const state=simulationState({exact:false});if(!state)return;
-    if(simulationMode==='material'){
+    if(isMaterialMode()){
       const options=materialRenderOptions();
       if(materialFilter){const baseProject=options.project;options.project=(point,id)=>baseProject(point,id).filter(p=>materialFilter(p,id));}
-      const rendered=simulationAPI.materialDraw(ctx,state,options,width,height),observations=rendered.observations||[];
+      const rendered=renderMaterial(ctx,state,options,width,height),observations=rendered.observations||[];
       materialObservations=appendObservations?materialObservations.concat(observations):observations;
       for(const p of observations){if(p.x<0||p.x>width||p.y<0||p.y>height||(occluder&&Math.hypot(p.x-occluder.p.x,p.y-occluder.p.y)<occluder.size))continue;targets.push({key:'simulation:material:'+p.id,observationId:p.observationId,branch:p.branch,x:p.x,y:p.y,r:Math.max(2,Math.min(7,(p.renderLength||6)*.4)),depth:p.depth});}
       return;
@@ -1005,7 +1095,7 @@
     const planet=darkWorldProjection();
     if(!planet){drawSimulation();return;}
     const state=simulationState({exact:false});
-    if(simulationMode!=='material'||!state){const p=project(simulationOrigin);if(p&&p.depth>planet.p.depth){drawSimulation();drawDarkWorld();}else{drawDarkWorld();drawSimulation();}return;}
+    if(!isMaterialMode()||!state){const p=project(simulationOrigin);if(p&&p.depth>planet.p.depth){drawSimulation();drawDarkWorld();}else{drawDarkWorld();drawSimulation();}return;}
     const centers=new Map(state.materialCells.map(cell=>[cell.id,new Map(projectMaterial(cell,cell.id).map(p=>[p.branch,p.depth]))]));
     const behind=(p,id)=>(centers.get(id)?.get(p.branch)??p.depth)>planet.p.depth;
     drawSimulation(behind,false,planet);drawDarkWorld();drawSimulation((p,id)=>!behind(p,id),true);
@@ -1268,7 +1358,7 @@
     if (!ctx) return;
     setCanvasSize();
     ctx.setTransform(resolution,0,0,resolution,0,0);
-    view = camera(); targets=[];
+    trackSpatialFrame();view = camera(); targets=[];
     if(spaceOptics){
       const z=Math.max(198,zFor(ordered.length-1)+60),c=bend(z);
       const rel=[c.x-view.x,c.y-view.y,z-view.z];
@@ -1293,7 +1383,7 @@
 
     if(!usingCosmos)drawStars();
     if(evidenceVisible)drawSimulationWithPlanet();else drawSimulation();
-    if(simulationMode!=='material'||evidenceVisible)drawEvidenceRoute();
+    if(!isMaterialMode()||evidenceVisible)drawEvidenceRoute();
     if(evidenceVisible){
     drawOpticalField();
     drawFieldTrajectory();
@@ -1611,7 +1701,7 @@
   window.__korridotProbe=Object.freeze({
     redraw:()=>drawScene(),
     simulation:()=>({mode:simulationMode,playing:simulationPlaying,debt:simulationDebt,state:simulationState(),diagnostics:simulationModel?.diagnostics()||null}),
-    material:()=>({view:{...materialView},observations:materialObservations.map(p=>({...p})),physicalDomain:'2D material plane, 3D observation camera',physicalScale:materialScale}),
+    material:()=>({view:{...materialView},observations:materialObservations.map(p=>({...p})),physicalDomain:simulationMode==='doppelacht'?'3D free material, 3D observation camera':'2D material plane, 3D observation camera',physicalScale:materialScale}),
     route:()=>Object.freeze({visible:flightRouteVisible,autopilot:routeAutopilot,waypoint:routeTarget().index,lensRadius:opticalState.lensRadius||0,btcBlocks:btcBlocks.length}),
     spaceflight:()=>Object.freeze({version:'1.0.0',beta:opticalBeta,
       velocity:{x:shipVX,y:shipVY,z:shipVZ},camera:camera(),evidenceVisible,

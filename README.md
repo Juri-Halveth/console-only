@@ -178,3 +178,7 @@ und geprüft sind.
 
 Der Code dieses Repositories steht unter [MIT](LICENSE). Externe Projekte,
 auf die Dokumentation oder Portale verweisen, behalten ihre eigenen Rechte.
+
+## Doppelacht im Flugraum
+
+In der Vorschau dieses Branches öffnet die Abfrage `?modell=doppelacht` direkt die 3D-Szene. Unter **Mehr** stehen vier Kameras, Zellverfolgung, Kopplung, JSON und 4K bereit. [Modell und Prüftoleranzen](DOPPELACHT.md).

@@ -171,7 +171,7 @@ def serve(root, read, store, open_browser=True):
     state(root, read, store)
     page = (Path(__file__).parent / 'garden_live.html').read_bytes()
     script = (Path(__file__).parent / 'garden_live.js').read_bytes()
-    static_model_paths = {'/'+name: Path(__file__).parent/name for name in ('simulation_models.mjs','particle-dynamics.js','reference-physics.js','models.js','material-engine.js','material-model.js','material-view.js')}
+    static_model_paths = {'/'+name: Path(__file__).parent/name for name in ('simulation_models.mjs','particle-dynamics.js','reference-physics.js','models.js','material-engine.js','material-model.js','material-view.js','doppelacht-source.js','doppelacht.js','doppelacht-view.js')}
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             if self.headers.get('Host') != f'127.0.0.1:{self.server.server_port}':

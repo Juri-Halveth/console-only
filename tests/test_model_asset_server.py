@@ -15,7 +15,7 @@ class ModelAssetServer(unittest.TestCase):
             proc=subprocess.Popen([sys.executable,'-B',str(root/'src/garden.py'),'live'],cwd=root,env={**os.environ,'CONSOLE_ZERO_NO_BROWSER':'1','PYTHONIOENCODING':'utf-8'},stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8')
             try:
                 url=proc.stdout.readline().split()[2]
-                for name in ['simulation_models.mjs','particle-dynamics.js','reference-physics.js','models.js','material-engine.js','material-model.js','material-view.js']:
+                for name in ['simulation_models.mjs','particle-dynamics.js','reference-physics.js','models.js','material-engine.js','material-model.js','material-view.js','doppelacht-source.js','doppelacht.js','doppelacht-view.js']:
                     with urlopen(url+name,timeout=4) as response:
                         self.assertEqual(response.status,200);self.assertIn('text/javascript',response.headers['Content-Type'])
                         self.assertEqual(response.read(),(ROOT/'src'/name).read_bytes())
