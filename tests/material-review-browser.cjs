@@ -66,16 +66,34 @@ async function main(){const result={label,scope:'reported Console integration ca
   const model=require(path.join(rootConsole,'src/doppelacht.js')).create({layout:'shell'});
   for(let i=0;i<15;i++)model.step(60);
   const saved=model.snapshot(),p=await page('console');
+  const start=Date.now();
   try{
-   await p.evaluate(()=>{globalThis.__importHeartbeat=0;globalThis.__importTimer=setInterval(()=>{__importHeartbeat++;__korridotProbe.redraw();},16);});
-   const start=Date.now();
+   await p.evaluate(()=>{
+    globalThis.__importHeartbeat=0;globalThis.__importDraws=[];
+    // RAF is intentionally disabled by this deterministic fixture. A heartbeat
+    // must measure event-loop availability, not force a full software-GPU render
+    // every16ms for the entire seed replay. Sample three explicit redraws instead.
+    globalThis.__importTimer=setInterval(()=>{
+     __importHeartbeat++;
+     if(__importDraws.length<3&&document.getElementById('watchStatus').textContent.includes('wird geprüft')){
+      const before=performance.now();__korridotProbe.redraw();__importDraws.push(performance.now()-before);
+     }
+    },16);
+   });
    await p.locator('#simulationImportFile').setInputFiles({name:'900-seconds.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(saved))});
    await p.waitForFunction(()=>document.getElementById('watchStatus').textContent.includes('wird geprüft'),null,{polling:20});
    const during=await p.evaluate(()=>({heartbeat:__importHeartbeat,status:document.getElementById('watchStatus').textContent,mode:__review.payload().mode}));
+   const interactionStart=Date.now();await p.locator('#workshopToggle').dispatchEvent('click');
+   const interactionMs=Date.now()-interactionStart,opened=await p.locator('#workshopToggle').getAttribute('aria-expanded');
    await p.waitForFunction(()=>!document.getElementById('simulationImportFile').value,null,{polling:20,timeout:90000});
-   const after=await p.evaluate(()=>{clearInterval(__importTimer);return{heartbeat:__importHeartbeat,payload:__review.payload()};});
-   return {ok:during.mode==='material'&&after.heartbeat>during.heartbeat+5&&after.payload.model.tick===saved.tick&&JSON.stringify(after.payload.model)===JSON.stringify(saved),
-    replayTicks:saved.tick,elapsedMs:Date.now()-start,heartbeatDuring:during.heartbeat,heartbeatAfter:after.heartbeat,progress:during.status};
+   const after=await p.evaluate(()=>{clearInterval(__importTimer);return{heartbeat:__importHeartbeat,redrawMs:__importDraws,payload:__review.payload()};});
+   return {ok:during.mode==='material'&&after.heartbeat>during.heartbeat+5&&after.redrawMs.length===3&&opened==='true'&&interactionMs<2000&&after.payload.model.tick===saved.tick&&JSON.stringify(after.payload.model)===JSON.stringify(saved),
+    replayTicks:saved.tick,elapsedMs:Date.now()-start,interactionMs,heartbeatDuring:during.heartbeat,heartbeatAfter:after.heartbeat,redrawMs:after.redrawMs,progress:during.status};
+  }catch(error){
+   const diagnostic=await p.evaluate(()=>({heartbeat:globalThis.__importHeartbeat,redrawMs:globalThis.__importDraws,
+    status:document.getElementById('watchStatus').textContent,inputPending:!!document.getElementById('simulationImportFile').value,
+    modelMode:__korridotProbe.simulation().mode,tick:__korridotProbe.simulation().state?.tick})).catch(e=>({unavailable:e.message}));
+   throw Error(error.message+'; import diagnostic '+JSON.stringify({elapsedMs:Date.now()-start,...diagnostic}));
   }finally{await p.close();}
  });
  await check('C-D8-IMPORT-CANCEL',async()=>{
