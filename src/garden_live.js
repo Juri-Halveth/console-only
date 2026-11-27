@@ -11,6 +11,7 @@
   const evidenceToggle = document.getElementById('evidenceToggle');
   const focusToggle = document.getElementById('focusToggle');
   let cosmosRenderer = null, cosmosModule = null, spaceOptics = null;
+  let horizonSpace=null, interior=null;
   let cosmosEnabled = true, cosmosError = '', evidenceVisible = false;
   let opticalBeta = 0, opticalState = {beta:0,axis:[0,0,1]};
   let shipVZ = 0, fallbackFar = null, fallbackLocal = null;
@@ -34,6 +35,7 @@
     const generation=++rendererGeneration;
     try {
       spaceOptics=await import('./space_optics.mjs');
+      horizonSpace=await import('./horizon_space.mjs');
       const module=await import('./cosmos_renderer.mjs');
       if(generation!==rendererGeneration)return;
       cosmosModule=module;
@@ -191,6 +193,7 @@
     positionSpatial(simulationAPI.spatialView.presets[name]);drawScene();
   }
   function positionSpatial(angles) {
+    interior=null;
     const at=materialView.followId?simulationModel?.point(Number(materialView.followId.slice(1))):null;
     const cx=simulationOrigin.x+(at?.x??0)*materialScale,cy=simulationOrigin.y+(at?.y??0)*materialScale,cz=simulationOrigin.z+(at?.z??0)*materialScale;
     const d=Number.isFinite(materialView.distance)?materialScale*materialView.distance:32,cp=Math.cos(angles.pitch);shipX=cx-d*Math.sin(angles.yaw)*cp;
@@ -321,6 +324,7 @@
   simulationStatus();
   document.getElementById('simulationReset')?.addEventListener('click',resetSimulation);
   document.getElementById('simulationHome')?.addEventListener('click',()=>{
+    interior=null;
     if(btcFlight.active)stopBitcoinFlight();
     if(approach){approach.stop();delete materialView.distance;syncMaterialControls();}
     motion=false;routeAutopilot=false;targetZ=null;cameraZ=simulationOrigin.z-28;shipX=shipY=shipVX=shipVY=shipVZ=flightSpeed=wheelImpulse=opticalBeta=0;
@@ -328,7 +332,8 @@
   });
   function downloadBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   function validCamera(observation){
-    return observation && ['x','y','z','yaw','pitch','roll'].every(k=>Number.isFinite(observation.camera?.[k])) &&
+    return observation && (observation.interior==null || horizonSpace?.validInterior(observation.interior)) &&
+      ['x','y','z','yaw','pitch','roll'].every(k=>Number.isFinite(observation.camera?.[k])) &&
       Number.isFinite(observation.lens) && observation.lens>0;
   }
   function restoreCamera(observation){
@@ -337,14 +342,16 @@
     thrustHeld=reverseHeld=brakeHeld=false;pointerStart=null;
     shipVX=shipVY=shipVZ=flightSpeed=wheelImpulse=opticalBeta=0;
     const p=observation.camera;shipX=p.x;shipY=p.y;cameraZ=p.z;
+    const s=observation.interior;
+    interior=s?{...s,shell:BigInt(s.shell),axis:[...s.axis],center:[...s.center],bearing:[...s.bearing]}:null;
     yawOffset=targetYaw=p.yaw;pitchOffset=targetPitch=p.pitch;roll=p.roll;lens=observation.lens;
     updateMotionButton();
   }
   function simulationPayload(){
     if(simulationMode==='doppelacht')return {schema:'halveth.console-doppelacht/1',mode:simulationMode,model:simulationState(),
       clock:{credit:simulationDebt,step:simulationStep(),speed:Number(simulationSpeed.value),playing:simulationPlaying},
-      observation:{view:{...materialView},camera:{...camera()},lens},sourceClass:'SYNTHETIC_MODEL_NOT_GARDEN'};
-    return {schema:'halveth.console-model/2',releaseId:simulationCodeVersion.releaseId,featureRevision:'HALVETH_MATERIAL_INTEGRATION_20261117',codeHashes:simulationCodeVersion.codeHashes,mode:simulationMode,origin:simulationOrigin,scale:simulationMode==='material'?materialScale:simulationScale,preset:simulationMode==='experimental'?simulationPreset:simulationMode==='material'?materialConfig:null,pendingMaterialInputs:simulationMode==='material'?{drive:materialDriveValue,rodCoupling:materialCouplingValue}:undefined,clock:{credit:simulationDebt,step:simulationStep(),speed:Number(simulationSpeed.value),playing:simulationPlaying},observation:{physicalDomain:simulationMode==='material'?'2D material plane; 3D observation camera':'declared model',camera:{...camera()},lens,view:{...materialView}},model:simulationState(),diagnostics:simulationModel.diagnostics(),sourceClass:'SYNTHETIC_MODEL_NOT_GARDEN'};}
+      observation:{view:{...materialView},camera:{...camera()},...(interior?{interior:horizonSpace.saveInterior(interior)}:{}),lens},sourceClass:'SYNTHETIC_MODEL_NOT_GARDEN'};
+    return {schema:'halveth.console-model/2',releaseId:simulationCodeVersion.releaseId,featureRevision:'HALVETH_MATERIAL_INTEGRATION_20261117',codeHashes:simulationCodeVersion.codeHashes,mode:simulationMode,origin:simulationOrigin,scale:simulationMode==='material'?materialScale:simulationScale,preset:simulationMode==='experimental'?simulationPreset:simulationMode==='material'?materialConfig:null,pendingMaterialInputs:simulationMode==='material'?{drive:materialDriveValue,rodCoupling:materialCouplingValue}:undefined,clock:{credit:simulationDebt,step:simulationStep(),speed:Number(simulationSpeed.value),playing:simulationPlaying},observation:{physicalDomain:simulationMode==='material'?'2D material plane; 3D observation camera':'declared model',camera:{...camera()},...(interior?{interior:horizonSpace.saveInterior(interior)}:{}),lens,view:{...materialView}},model:simulationState(),diagnostics:simulationModel.diagnostics(),sourceClass:'SYNTHETIC_MODEL_NOT_GARDEN'};}
   document.getElementById('simulationJSON')?.addEventListener('click',()=>{if(simulationModel)downloadBlob(new Blob([JSON.stringify(simulationPayload(),null,2)],{type:'application/json'}),'HALVETH_'+simulationMode+'_model.json');});
   function projectMaterial(point,id,outWidth=width,outHeight=height){
     const world={x:simulationOrigin.x+point.x*materialScale,y:simulationOrigin.y+point.y*materialScale,z:simulationOrigin.z+(point.z||0)*materialScale};
@@ -623,9 +630,10 @@
     }
     if (selected === CORE) {
       line(detail, 'NAVIGATION · RAUMGEOMETRIE', 'small');
-      line(detail, 'Singularität / Horizont', 'h3');
-      line(detail, 'Hier liegt die modellierte Fluchtrichtung des Korridors. Die geometrische Bewegung ist kein laufendes Programm und stellt keine automatische Außenverbindung her.');
-      line(detail, 'Nur eine aufgezeichnete Portalbeziehung kann zu einer verlinkten Außenquelle führen.');
+      line(detail, 'Schwarzes Loch · KORRIDOT', 'h3');
+      line(detail, 'Mit W näherst du dich dem Horizont. Auf dem Touchscreen halte die Szene gedrückt. Im Innenraum zählt jede zurückgelegte Strecke zur nächsten Schale.');
+      line(detail, 'Beim Umschauen folgt der gekrümmte Sternhimmel deiner Blickrichtung. Home bringt dich zum Eingang zurück.');
+      line(detail, 'Der Horizont ist eine Position im Modell. Über die Navigation startest du kein laufendes Programm auf einem anderen Rechner.');
       return;
     }
     if (!selected) {
@@ -1101,6 +1109,7 @@
     routeAutopilot=false;
     showEvidence(true);
     if (!btcPlayable || !btcModel) return;
+    interior=null;
     btcFlight.active=true;btcFlight.playing=true;btcFlight.elapsed=0;
     btcFlight.orbitYaw=0;btcFlight.orbitPitch=.23;
     observer.visible=true;observer.ready=true;
@@ -1276,6 +1285,7 @@
     opticMode=(opticMode+1)%3;
     if(opticMode===1) {
       // Explicit user action: approach this fixed synthetic world region.
+      interior=null;
       cameraZ=opticWorld.z-95;
       shipX=0;shipY=0;shipVX=0;shipVY=0;
       yawOffset=0;pitchOffset=0;targetYaw=0;targetPitch=0;roll=0;
@@ -1409,21 +1419,31 @@
     targetYaw+=clamp(turn,-dt*.65,dt*.65);
     targetPitch+=clamp(pitch-targetPitch,-dt*.5,dt*.5);
   }
+  function horizonCenter() {
+    const z=Math.max(198,zFor(ordered.length-1)+60), c=bend(z);
+    return [c.x,c.y,z];
+  }
   function drawScene() {
     if (!ctx) return;
     setCanvasSize();
     ctx.setTransform(resolution,0,0,resolution,0,0);
     trackSpatialFrame();view = camera(); targets=[];
     if(spaceOptics){
-      const z=Math.max(198,zFor(ordered.length-1)+60),c=bend(z);
-      const rel=[c.x-view.x,c.y-view.y,z-view.z];
-      const d=Math.hypot(...rel),direction=spaceOptics.worldToCameraVector(rel,view);
+      const center=interior?.center || horizonCenter();
+      const rel=[center[0]-view.x,center[1]-view.y,center[2]-view.z];
+      const d=Math.hypot(...rel),direction=spaceOptics.worldToCameraVector(interior?.axis || rel,view);
       const base=spaceOptics.createOpticsState({beta:btcFlight.active?0:opticalBeta,
         axis:spaceOptics.worldToCameraVector([shipVX,shipVY,shipVZ],view)});
       const apparent=spaceOptics.forwardDirection(direction,base);
-      const radius=direction[2]>0&&d>5?Math.min(.18,.72/Math.sqrt(d+18)):0;
+      const skyBend=horizonSpace?.horizonBend(d,interior) || 0;
+      // Close to the focus the same angular sky surrounds the observer, so
+      // turning the view across 90 degrees must not switch the lens off.
+      const cosine=direction[2]/(Math.hypot(...direction)||1);
+      const blend=clamp((cosine+.12)/.24,0,1),front=blend*blend*(3-2*blend);
+      const visible=front+(1-front)*Math.min(1,skyBend/2.4);
+      const radius=visible*Math.min(.18,.72/Math.sqrt(d+18));
       opticalState=spaceOptics.createOpticsState({beta:base.beta,axis:base.axis,
-        lensAxis:apparent,lensRadius:radius,focusDistance:d});
+        lensAxis:apparent,lensRadius:radius,focusDistance:d,skyAxis:apparent,skyBend});
     }
     if (!observer.ready) observerHome();
     let usingCosmos=false;
@@ -1468,6 +1488,7 @@
     const speedText=btcFlight.active ? `BTC ×${speedLevels[speedIndex]}` :
       `×${speedLevels[speedIndex]} · WARP ${warpRampEnabled?currentRamp.toFixed(1)+'×':'AUS'}`;
     coords.textContent=`X ${shipX.toFixed(1)} · Y ${shipY.toFixed(1)} · Z ${cameraZ.toFixed(1)} · ${Math.round(flightSpeed)} u/s · ${speedText} · ${fps||'…'} FPS · T ${behind}/${ordered.length}`;
+    if(interior)coords.textContent+=' · Innenraum · Schale '+interior.shell.toString()+' · Home zum Ausgang';
     timeLabel.textContent=slider.value+' / '+ordered.length;
     timeLabel.title=Number(slider.value)?ordered[Number(slider.value)-1].at:'';
     captureRecordingFrame();
@@ -1488,6 +1509,7 @@
   function focusRow(index) {
     if (btcFlight.active) stopBitcoinFlight();
     if (index<0||index>=ordered.length) return;
+    interior=null;
     showEvidence(true);
     auto=false;motion=false;updateMotionButton();
     follow.setAttribute('aria-pressed','false');follow.textContent='○ Live folgen';
@@ -1548,14 +1570,17 @@
   document.getElementById('zoomIn').onclick=()=>{lens=clamp(lens*1.15,.55,1.9);drawScene();};
   document.getElementById('zoomOut').onclick=()=>{lens=clamp(lens/1.15,.55,1.9);drawScene();};
   document.getElementById('home').onclick=()=>{
+    interior=null;
     motion=false;updateMotionButton();cameraZ=0;targetZ=null;
     shipX=shipY=shipVX=shipVY=shipVZ=flightSpeed=wheelImpulse=opticalBeta=0;
     yawOffset=pitchOffset=targetYaw=targetPitch=roll=0;drawScene();
   };
   document.getElementById('horizon').onclick=()=>{
-    const end=Math.max(198,zFor(ordered.length-1)+60);
-    motion=false;updateMotionButton();targetZ=clamp(end-22,0,maxTravel());
-    showEvidence(true);selected=CORE;showDetail();drawScene();
+    interior=null;
+    if(btcFlight.active)stopBitcoinFlight();
+    routeAutopilot=false;motion=false;updateMotionButton();targetZ=horizonCenter()[2]-22;
+    selected=CORE;showDetail();drawScene();
+    canvas.focus({preventScroll:true});
   };
   const warpToggle=document.getElementById('warpToggle');
   warpToggle.onclick=()=>{
@@ -1656,6 +1681,7 @@
     else if(key==='p'&&btcFlight.active){btcFlight.playing=!btcFlight.playing;}
     else if(key==='n'){observer.visible=!observer.visible;}
     else if(key==='Home'){if(btcFlight.active)stopBitcoinFlight();
+      interior=null;
       cameraZ=0;shipX=shipY=shipVX=shipVY=shipVZ=flightSpeed=wheelImpulse=opticalBeta=0;
       yawOffset=pitchOffset=targetYaw=targetPitch=roll=0;targetZ=null;motion=false;routeAutopilot=false;
     }else if(key===' '){motion=!motion;targetZ=null;}
@@ -1734,12 +1760,17 @@
     shipVX+=(vx-shipVX)*drift;shipVY+=(vy-shipVY)*drift;shipVZ+=(vz-shipVZ)*drift;
     if(targetZ!==null){
       const t=1-Math.exp(-dt*5.5),diff=targetZ-cameraZ;
-      cameraZ+=diff*t;shipX*=1-t;shipY*=1-t;
+      const [goalX,goalY]=selected===CORE?horizonCenter():[0,0];
+      cameraZ+=diff*t;shipX+=(goalX-shipX)*t;shipY+=(goalY-shipY)*t;
       yawOffset*=1-t;pitchOffset*=1-t;targetYaw=yawOffset;targetPitch=pitchOffset;
       shipVX=shipVY=shipVZ=flightSpeed=wheelImpulse=0;
-      if(Math.abs(diff)<.04){cameraZ=targetZ;targetZ=null;}
+      if(Math.abs(diff)<.04){cameraZ=targetZ;shipX=goalX;shipY=goalY;targetZ=null;}
     }else{
-      shipX+=(oldVX+shipVX)*.5*dt;shipY+=(oldVY+shipVY)*.5*dt;cameraZ+=(oldVZ+shipVZ)*.5*dt;
+      const step=[(oldVX+shipVX)*.5*dt,(oldVY+shipVY)*.5*dt,(oldVZ+shipVZ)*.5*dt];
+      if(interior)horizonSpace.advanceInside(interior,step);
+      else if(horizonSpace)interior=horizonSpace.enterHorizon([shipX,shipY,cameraZ],step,horizonCenter());
+      if(interior)[shipX,shipY,cameraZ]=horizonSpace.interiorPosition(interior);
+      else {shipX+=step[0];shipY+=step[1];cameraZ+=step[2];}
     }
     if(braking&&Math.hypot(shipVX,shipVY,shipVZ)<.03)shipVX=shipVY=shipVZ=0;
     wheelImpulse*=Math.exp(-dt*4.7);if(Math.abs(wheelImpulse)<.02)wheelImpulse=0;
@@ -1764,7 +1795,7 @@
     simulation:()=>({mode:simulationMode,playing:simulationPlaying,debt:simulationDebt,state:simulationState(),diagnostics:simulationModel?.diagnostics()||null}),
     material:()=>({view:{...materialView},observations:materialObservations.map(p=>({...p})),physicalDomain:simulationMode==='doppelacht'?'3D free material, 3D observation camera':'2D material plane, 3D observation camera',physicalScale:materialScale}),
     route:()=>Object.freeze({visible:flightRouteVisible,autopilot:routeAutopilot,waypoint:routeTarget().index,lensRadius:opticalState.lensRadius||0,btcBlocks:btcBlocks.length}),
-    spaceflight:()=>Object.freeze({version:'1.0.0',beta:opticalBeta,
+    spaceflight:()=>Object.freeze({version:'1.0.0',beta:opticalBeta,interior:horizonSpace?.saveInterior(interior)??null,skyBend:opticalState.skyBend||0,
       velocity:{x:shipVX,y:shipVY,z:shipVZ},camera:camera(),evidenceVisible,
       opticsReady:!!spaceOptics,renderer:cosmosRenderer?.stats?.()||null}),
     cosmos:()=>Object.freeze({ready:!!cosmosRenderer,enabled:cosmosEnabled,error:cosmosError}),

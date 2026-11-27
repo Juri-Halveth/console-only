@@ -46,9 +46,10 @@ function normalizeFallback(value) {
 }
 
 /** Create once per frame and share the same state with Canvas and WebGL. */
-export function createOpticsState({ beta = 0, axis = FORWARD, lensAxis = FORWARD, lensRadius = 0, focusDistance = Infinity } = {}) {
+export function createOpticsState({ beta = 0, axis = FORWARD, lensAxis = FORWARD, lensRadius = 0, focusDistance = Infinity, skyAxis = FORWARD, skyBend = 0 } = {}) {
   beta = Number.isFinite(beta)
     ? Math.max(-MAX_ABERRATION_BETA, Math.min(MAX_ABERRATION_BETA, beta)) : 0;
+  skyBend = Number.isFinite(skyBend) ? Math.min(2.8,Math.max(0,skyBend)) : 0;
   return Object.freeze({
     beta,
     axis: Object.freeze(normalizeDirection(axis)),
@@ -56,6 +57,9 @@ export function createOpticsState({ beta = 0, axis = FORWARD, lensAxis = FORWARD
     lensAxis: Object.freeze(normalizeDirection(lensAxis)),
     lensRadius: Number.isFinite(lensRadius) ? Math.max(0,Math.min(.24,lensRadius)) : 0,
     focusDistance: Number.isFinite(focusDistance)?Math.max(0,focusDistance):Infinity,
+    skyAxis: Object.freeze(normalizeDirection(skyAxis)),
+    skyBend,
+    skyWarp: Object.freeze([Math.cosh(skyBend)-1,Math.sinh(skyBend)]),
     [PREPARED]: true,
   });
 }
@@ -189,6 +193,20 @@ export function lensImageDirections(source,axis,thetaE=0){
   return[1,-1].map((sign,i)=>{const theta=.5*(b+sign*Math.sqrt(b*b+4*thetaE*thetaE));
     return{direction:normalizeDirection(k.map((v,j)=>v*Math.cos(theta)+e[j]*Math.sin(theta))),branch:i?'secondary':'primary'};});
 }
+
+// Interior display geometry: tan(apparentAngle/2) = exp(bend)*tan(sourceAngle/2).
+// This form stays finite at both poles. Reversing sinh(bend) inverts the map.
+function skyImage(n, state, inverse=false) {
+  if (state.skyBend === 0) return {direction:n, magnification:1};
+  const axis=state.skyAxis, [coshMinusOne,sinh]=state.skyWarp;
+  const s=inverse?-sinh:sinh;
+  const mu=Math.max(-1,Math.min(1,n[0]*axis[0]+n[1]*axis[1]+n[2]*axis[2]));
+  const along=coshMinusOne*mu-s;
+  return {
+    direction: normalizeDirection(n.map((v,i)=>v+along*axis[i])),
+    magnification: 1/(1+coshMinusOne-s*mu),
+  };
+}
 /** Project all image branches of one stable world source. */
 export function projectPointImages(point,camera,width,height,lens=1,state=IDENTITY_OPTICS,{near=.8,far=310,sourceId=''}={}){
   const p=components(point),position=components(camera),focal=focalLength(width,height,lens);
@@ -199,10 +217,12 @@ export function projectPointImages(point,camera,width,height,lens=1,state=IDENTI
   if(!(distance>0)||!Number.isFinite(distance)||distance<near||distance>far)return[];
   const local=worldToCameraVector(relative,camera),restDirection=normalizeDirection(local),s=prepared(state);
   const apparent=forwardDirection(restDirection,s),radius=lensRadiusAtDistance(distance,s),doppler=dopplerFactor(restDirection,s);
-  return lensImageDirections(apparent,s.lensAxis,radius).filter(image=>image.direction[2]>1e-9).map(image=>{
-    const n=image.direction,depth=distance*n[2];
+  return lensImageDirections(apparent,s.lensAxis,radius).flatMap(image=>{
+    const {direction:n,magnification}=skyImage(image.direction,s);
+    if(n[2]<=1e-9)return [];
+    const depth=distance*n[2];
     return{x:width*.5+n[0]*focal/n[2],y:height*.5-n[1]*focal/n[2],depth,distance,cameraDepth:local[2],doppler,
-      scale:focal/depth/doppler,branch:image.branch,sourceId,observationId:sourceId+':image:'+image.branch,lensRadius:radius};
+      scale:focal/depth/doppler*magnification,branch:image.branch,sourceId,observationId:sourceId+':image:'+image.branch,lensRadius:radius};
   });
 }
 /** Backwards compatible primary image; callers needing multiplicity use images. */
@@ -213,10 +233,13 @@ export function worldRayFromPixel(x, y, camera, width, height, lens = 1,
     state = IDENTITY_OPTICS, {distance=Infinity}={}) {
   const focal = focalLength(width, height, lens);
   if (focal === null || !Number.isFinite(x) || !Number.isFinite(y)) return null;
-  const apparent = lensInverseDirection(normalizeDirection([
+  const s=prepared(state);
+  const pixelDirection = normalizeDirection([
     (x - width * 0.5) / focal, (height * 0.5 - y) / focal, 1,
-  ]),prepared(state).lensAxis,lensRadiusAtDistance(distance,state));
-  return normalizeDirection(cameraToWorldVector(inverseDirection(apparent, state), camera));
+  ]);
+  const unbent=skyImage(pixelDirection,s,true).direction;
+  const apparent=lensInverseDirection(unbent,s.lensAxis,lensRadiusAtDistance(distance,s));
+  return normalizeDirection(cameraToWorldVector(inverseDirection(apparent, s), camera));
 }
 
 /**
@@ -232,6 +255,14 @@ vec3 soUnit(vec3 v) {
   if(!(biggest>0.0))return vec3(0.0,0.0,1.0);
   v/=biggest;
   return v*inversesqrt(dot(v,v));
+}
+
+// warp = (cosh(bend)-1, sinh(bend)); the inverse flips only the second term.
+// Zero-valued uniforms retain the original projection for older consumers.
+vec4 soSkyImage(vec3 n, vec3 axis, vec2 warp) {
+  if(warp.y==0.0) return vec4(n,1.0);
+  float mu=clamp(dot(n,axis),-1.0,1.0);
+  return vec4(soUnit(n+axis*(warp.x*mu-warp.y)),1.0/(1.0+warp.x-warp.y*mu));
 }
 
 vec3 soLensForward(vec3 source,vec3 axis,float r){

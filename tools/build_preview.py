@@ -146,5 +146,5 @@ if (ROOT / 'src/doppelacht-source.js').read_bytes() != expected.encode('utf8'):
     raise ValueError('Refresh the shared Double Eight solver fingerprint before building')
 
 # Local module imports must also work in the self-contained synthetic preview.
-for module in ('field_physics.mjs', 'openspace_dna.mjs', 'btc_time_rail.mjs', 'simulation_models.mjs', 'particle-dynamics.js', 'reference-physics.js', 'models.js', 'material-engine.js', 'material-model.js', 'material-view.js','doppelacht-source.js','doppelacht.js','doppelacht-view.js'):
+for module in ('field_physics.mjs', 'openspace_dna.mjs', 'btc_time_rail.mjs', 'horizon_space.mjs','simulation_models.mjs', 'particle-dynamics.js', 'reference-physics.js', 'models.js', 'material-engine.js', 'material-model.js', 'material-view.js','doppelacht-source.js','doppelacht.js','doppelacht-view.js'):
     shutil.copyfile(ROOT / 'src' / module, OUT / module)
