@@ -1,5 +1,6 @@
 """Explicit local command receipts and a read-only loopback view of the garden."""
 from datetime import datetime, timezone
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
 import json
@@ -8,12 +9,14 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import uuid
 import webbrowser
 
 ZERO = '0' * 64
 LIMIT = 128
+MAX_LEDGER_BYTES = 250_000
 MAX_OUTPUT = 4096
 MAX_SECONDS = 30
 
@@ -40,12 +43,20 @@ def path(root, store):
 
 
 def read_runs(root, store):
-    target = path(root, store)
+    return decode_runs(read_run_bytes(path(root, store)))
+
+
+def read_run_bytes(target):
     if not target.exists():
-        return []
-    blob = target.read_bytes()
-    if len(blob) > 250_000 or blob and not blob.endswith(b'\n'):
+        return b''
+    with target.open('rb') as stream:
+        blob = stream.read(MAX_LEDGER_BYTES + 1)
+    if len(blob) > MAX_LEDGER_BYTES or blob and not blob.endswith(b'\n'):
         raise ValueError('Ausführungsbeleg zu groß oder abgeschnitten')
+    return blob
+
+
+def decode_runs(blob):
     previous, events, starts, ended = ZERO, [], {}, set()
     for sequence, line in enumerate(blob.splitlines(), 1):
         entry = json.loads(line)
@@ -86,16 +97,62 @@ def read_runs(root, store):
     return events
 
 
+@contextmanager
+def run_writer(target):
+    guard = target.with_suffix('.writer.lock')
+    if guard.is_symlink():
+        raise ValueError('Belegsperre ist eine Verknüpfung')
+    with guard.open('a+b') as handle:
+        handle.seek(0)
+        if os.name == 'nt':
+            import msvcrt
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle, fcntl.LOCK_EX)
+        # Closing the handle also releases the lock after a writer fails.
+        yield
+
+
+def end_budget(start):
+    # A control character can occupy six bytes in UTF-8 JSON (Unicode escape).
+    end = {'seq': LIMIT, 'prev': ZERO, 'kind': 'run-end', 'node': start['node'],
+           'runId': start['runId'], 'at': now(), 'result': 'SPAWN_ERROR',
+           'exitCode': -2147483648, 'output': '', 'hash': ZERO}
+    return len(packed(end)) + 1 + 6 * MAX_OUTPUT
+
+
 def append_run(root, store, entry):
-    events = read_runs(root, store)
-    if len(events) >= LIMIT:
-        raise ValueError('Ausführungsbeleg: 128 Ereignisse erreicht')
-    entry.update(seq=len(events) + 1, prev=events[-1]['hash'] if events else ZERO, at=now())
-    entry['hash'] = sha(packed(entry))
-    with path(root, store).open('ab') as stream:
-        stream.write(packed(entry) + b'\n')
-        stream.flush()
-        os.fsync(stream.fileno())
+    target = path(root, store)
+    with run_writer(target):
+        previous = read_run_bytes(target)
+        events = decode_runs(previous)
+        entry.update(seq=len(events) + 1, prev=events[-1]['hash'] if events else ZERO, at=now())
+        entry['hash'] = sha(packed(entry))
+        line = packed(entry) + b'\n'
+        # Reserve both the slot and the bytes for every command still running.
+        pending = {}
+        for event in [*events, entry]:
+            if event['kind'] == 'run-start':
+                pending[event['runId']] = event
+            else:
+                del pending[event['runId']]
+        if len(events) + 1 + len(pending) > LIMIT:
+            raise ValueError('Ausführungsbeleg: Ereignislimit erreicht')
+        if len(previous) + len(line) + sum(map(end_budget, pending.values())) > MAX_LEDGER_BYTES:
+            raise ValueError('Ausführungsbeleg: zu wenig Platz für vollständigen Lauf')
+        # Readers see a complete old or new ledger even when a write fails.
+        fd, name = tempfile.mkstemp(dir=target.parent)
+        temp = Path(name)
+        try:
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(previous)
+                stream.write(line)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temp, target)
+        finally:
+            temp.unlink(missing_ok=True)
 
 
 def capture(command, root):
