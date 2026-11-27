@@ -9,8 +9,6 @@ import json
 import os
 from pathlib import Path
 import re
-import subprocess
-import threading
 import time
 import uuid
 
@@ -134,6 +132,7 @@ def _validate_command(node, command, read, root, timeout):
 
 def start_job(root, node, command, timeout, read, store):
     """Blocking until completion, with inspectable live progress from another terminal."""
+    from garden_process import OutputReader, start as start_process
     command = command[1:] if command[:1] == ['--'] else command
     _validate_command(node, command, read, root, timeout)
     base, _, guard, logdir = _paths(root, store)
@@ -148,6 +147,7 @@ def start_job(root, node, command, timeout, read, store):
     with os.fdopen(fd, 'w', encoding='utf-8') as lockfile:
         json.dump({'jobId': job_id, 'pid': os.getpid()}, lockfile)
     process = None
+    reader = None
     log = None
     marker = base / f'{job_id}.cancel'
     start = time.monotonic()
@@ -165,29 +165,24 @@ def start_job(root, node, command, timeout, read, store):
              'timeoutSeconds':timeout})
         print(f'AUFTRAG START · {node} · {job_id} · Limit {timeout}s', flush=True)
         try:
-            process = subprocess.Popen(command, cwd=root, stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                env={**os.environ, 'PYTHONIOENCODING':'utf-8'})
+            process = start_process(command, root)
         except OSError as exc:
             log.write(f'SPAWN_ERROR: {type(exc).__name__}\n'.encode())
         if process is not None:
-            def drain():
-                while True:
-                    chunk = process.stdout.read(8192)
-                    if not chunk:
-                        break
-                    captured['total'] += len(chunk)
-                    remaining = LOG_CAP_BYTES - captured['stored']
-                    if remaining > 0:
-                        clipped = chunk[:remaining]
-                        log.write(clipped)
-                        captured['stored'] += len(clipped)
-            reader = threading.Thread(target=drain, daemon=True)
+            def capture_chunk(chunk):
+                captured['total'] += len(chunk)
+                remaining = LOG_CAP_BYTES - captured['stored']
+                if remaining > 0:
+                    clipped = chunk[:remaining]
+                    log.write(clipped)
+                    captured['stored'] += len(clipped)
+
+            reader = OutputReader(process.stdout, capture_chunk)
             reader.start()
             checkpoint = start + PROGRESS_INTERVAL
             while True:
                 code = process.poll()
-                if code is not None:
+                if code is not None and not reader.is_alive():
                     result, exit_code = 'EXITED', code
                     break
                 current = time.monotonic()
@@ -206,16 +201,12 @@ def start_job(root, node, command, timeout, read, store):
                     checkpoint = current + PROGRESS_INTERVAL
                 time.sleep(.2)
             if result in ('TIMEOUT', 'CANCELLED'):
-                process.terminate()
-                try:
-                    process.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=3)
-            reader.join(timeout=4)
-            if reader.is_alive():
-                raise RuntimeError('Auftragsausgabe nicht vollständig abgeholt; Prozessnachfahren prüfen')
-            process.stdout.close()
+                process.stop()
+            reader.finish()
+            try:
+                process.close()
+            finally:
+                process = None
         log.flush()
         os.fsync(log.fileno())
         log.close()
@@ -231,14 +222,17 @@ def start_job(root, node, command, timeout, read, store):
         return 0 if result == 'EXITED' and exit_code == 0 else 1
     except KeyboardInterrupt:
         print('Unterbrochen. Offener Startbeleg bleibt erhalten.', flush=True)
-        if process is not None and process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                process.kill()
         return 130
     finally:
+        if process is not None:
+            try:
+                process.stop()
+                if reader is not None and reader.ident is not None:
+                    reader.join(timeout=4)
+                else:
+                    process.stdout.close()
+            finally:
+                process.close()
         if log is not None:
             log.close()
         if guard.is_file():

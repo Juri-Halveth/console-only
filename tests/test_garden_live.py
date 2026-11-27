@@ -16,6 +16,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 source = Path(__file__).resolve().parents[1] / 'src'
+sys.path.insert(0, str(source))
 def load(name):
     spec = importlib.util.spec_from_file_location(name, source / (name + '.py'))
     module = importlib.util.module_from_spec(spec)
@@ -109,7 +110,8 @@ class GardenLiveTests(unittest.TestCase):
             self.seed(root)
             copied = root / 'src'
             copied.mkdir()
-            for file in ('garden.py', 'garden_live.py', 'garden_live.html', 'garden_live.js', 'garden_jobs.py'):
+            for file in ('garden.py', 'garden_live.py', 'garden_live.html', 'garden_live.js',
+                         'garden_jobs.py', 'garden_process.py'):
                 shutil.copy2(source / file, copied / file)
             cmd = [sys.executable, '-B', str(copied / 'garden.py'), 'live']
             env = {**os.environ, 'CONSOLE_ZERO_NO_BROWSER': '1'}

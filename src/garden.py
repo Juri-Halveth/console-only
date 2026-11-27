@@ -383,7 +383,7 @@ def main(argv=None, root=None):
             target = render(root)
             if not webbrowser.open(target.resolve().as_uri()):
                 print('Browser nicht geöffnet; die ausgegebene HTML-Datei manuell öffnen')
-    except (OSError, ValueError, UnicodeError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, RuntimeError) as exc:
         print(f'GARTEN STOP: {exc}', file=sys.stderr)
         return 1
     return 0
