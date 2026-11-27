@@ -1,4 +1,5 @@
 import contextlib
+from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import io
 import json
@@ -8,7 +9,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -62,6 +65,43 @@ class GardenLiveTests(unittest.TestCase):
             live.path(root, garden.store).write_bytes(before.replace(b'EXITED', b'ALTERED'))
             with self.assertRaisesRegex(ValueError, 'Kette beschädigt'):
                 live.state(root, garden.read, garden.store)
+
+    def test_end_receipt_space_is_reserved_before_starting_command(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.seed(root)
+            with patch.object(live, 'capture', return_value=('EXITED', 0, 'Grün')):
+                live.run_command(root, 'Welten', ['demo'], garden.read, garden.store)
+            target = live.path(root, garden.store)
+            before = target.read_bytes()
+            start_size = len(before.splitlines(keepends=True)[0])
+            available = len(before) + start_size + 1
+            with patch.object(live, 'MAX_LEDGER_BYTES', available), patch.object(live, 'capture') as capture:
+                with self.assertRaisesRegex(ValueError, 'zu wenig Platz'):
+                    live.run_command(root, 'Welten', ['demo'], garden.read, garden.store)
+                capture.assert_not_called()
+                self.assertEqual(len(live.read_runs(root, garden.store)), 2)
+            with patch.object(live, 'LIMIT', 3), patch.object(live, 'capture') as capture:
+                with self.assertRaisesRegex(ValueError, 'Ereignislimit'):
+                    live.run_command(root, 'Welten', ['demo'], garden.read, garden.store)
+                capture.assert_not_called()
+            self.assertEqual(target.read_bytes(), before)
+
+    def test_overlapping_commands_keep_two_complete_chained_receipts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.seed(root)
+            overlap = threading.Barrier(2, timeout=7)
+            def capture(command, root):
+                overlap.wait()
+                return 'EXITED', 0, '\0' * live.MAX_OUTPUT
+            with contextlib.redirect_stdout(io.StringIO()), patch.object(live, 'capture', side_effect=capture), ThreadPoolExecutor(2) as pool:
+                runs = [pool.submit(live.run_command, root, 'Welten', ['demo'], garden.read,
+                                    garden.store) for _ in range(2)]
+                self.assertEqual([run.result(timeout=12) for run in runs], [0, 0])
+            events = live.read_runs(root, garden.store)
+            self.assertEqual([row['kind'] for row in events], ['run-start'] * 2 + ['run-end'] * 2)
+            self.assertEqual({row['runId'] for row in events[:2]}, {row['runId'] for row in events[2:]})
 
     def test_loopback_serves_fresh_state_and_rejects_other_host(self):
         with tempfile.TemporaryDirectory() as tmp:
