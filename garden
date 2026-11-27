@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
 set -e
 cd "$(dirname "$0")"
-exec python -B src/garden.py "$@"
+if command -v python >/dev/null 2>&1 && python -c 'import sys; sys.exit(sys.version_info.major != 3)'; then
+  exec python -B src/garden.py "$@"
+fi
+exec python3 -B src/garden.py "$@"

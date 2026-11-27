@@ -79,11 +79,18 @@ cd "$HOME/console-zero"
 
 `run` startet das angegebene Programm ohne Shell-Interpretation, im
 Console-Zero-Ordner und mit geschlossenem Standard-Eingang. Für Bash-Code
-ist ausdrücklich `-- bash -lc '...'` möglich. Höchstens 30 Sekunden und
-4096 Ausgabe-Bytes werden vom direkt gestarteten Prozess erfasst; von ihm
-gestartete Hintergrundprozesse sind nicht umfasst. Der Beleg schreibt START vor dem
-Prozessaufruf und ENDE danach; nach Absturz bleibt START sichtbar und
-wird nicht automatisch wiederholt. Eine nicht gestartete oder mit Fehler
+ist ausdrücklich `-- bash -lc '...'` möglich. Der Kurzlauf hat 30 Sekunden
+Zeitbudget einschließlich der Ausgabe. Der Beleg übernimmt die ersten
+4096 Ausgabe-Bytes. Bei Zeitablauf beendet Garden die eigene POSIX-Prozessgruppe
+beziehungsweise das Windows-Jobobjekt samt zugehörigen Kindern. Beim Langauftrag
+`job` gilt das auch für den ausdrücklichen Abbruch. Ein außerhalb dieser Gruppe
+arbeitender Dienst hat einen eigenen Lebenszyklus. Ein reguläres `EXITED` meldet
+den Exit-Code des gewählten Programms nach dem Schließen der Ausgabepipe.
+
+Garden reserviert vor dem Start Platz für den Abschlussbeleg. Ein offener
+START nach einem Absturz lässt die Wirkung ungeklärt. Auch bis zu einem
+TIMEOUT können bereits Dateien geschrieben worden sein. Prüfe den Zustand der
+Zieldateien vor einem erneuten Lauf. Eine nicht gestartete oder mit Fehler
 beendete Ausführung erhält ihren eigenen Status. Befehlsargumente und
 Ausgabe stehen lokal im Beleg und können Geheimnisse enthalten; daher
 keine Passwörter oder Schlüssel in diesen Aufruf einfügen. Die Seite

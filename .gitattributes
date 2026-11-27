@@ -1,4 +1,5 @@
 # Preserve source-bound runtime bytes across Windows and Linux checkouts.
+/garden text eol=lf
 src/*.js -text
 src/*.mjs -text
 src/garden_live.html -text

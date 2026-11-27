@@ -7,10 +7,9 @@ import json
 import os
 from pathlib import Path
 import re
-import subprocess
 import sys
 import tempfile
-import threading
+import time
 import uuid
 import webbrowser
 
@@ -156,40 +155,43 @@ def append_run(root, store, entry):
 
 
 def capture(command, root):
-    chunks = []
-    total = [0]
+    from garden_process import OutputReader, start
+    output = bytearray()
+    deadline = time.monotonic() + MAX_SECONDS
     try:
-        process = subprocess.Popen(command, cwd=root, stdin=subprocess.DEVNULL,
-                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                   env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
+        process = start(command, root)
     except OSError as exc:
         return 'SPAWN_ERROR', None, str(exc)[:MAX_OUTPUT]
 
-    def drain():
-        while True:
-            chunk = process.stdout.read(8192)
-            if not chunk:
-                break
-            if total[0] < MAX_OUTPUT:
-                chunks.append(chunk[:MAX_OUTPUT - total[0]])
-                total[0] += len(chunks[-1])
+    def capture_chunk(chunk):
+        output.extend(chunk[:MAX_OUTPUT - len(output)])
 
-    reader = threading.Thread(target=drain, daemon=True)
-    reader.start()
+    reader = OutputReader(process.stdout, capture_chunk)
     result = 'EXITED'
     try:
-        process.wait(timeout=MAX_SECONDS)
-    except subprocess.TimeoutExpired:
-        result = 'TIMEOUT'
-        process.kill()
-        process.wait()
-    reader.join(timeout=2)
-    if not reader.is_alive():
-        process.stdout.close()
-    output = b''.join(chunks).decode('utf-8', 'replace')
-    if total[0] >= MAX_OUTPUT:
-        output += '\n[Ausgabe auf 4096 Bytes begrenzt]'
-    return result, process.returncode if result == 'EXITED' else None, output[:MAX_OUTPUT]
+        reader.start()
+        while True:
+            code = process.poll()
+            if code is not None and not reader.is_alive():
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                process.stop()
+                result, code = 'TIMEOUT', None
+                break
+            time.sleep(min(.02, remaining))
+        reader.finish()
+    except BaseException:
+        process.stop()
+        if reader.ident is None:
+            process.stdout.close()
+        raise
+    finally:
+        process.close()
+    text = output.decode('utf-8', 'replace')
+    if len(output) >= MAX_OUTPUT:
+        text += '\n[Ausgabe auf 4096 Bytes begrenzt]'
+    return result, code, text[:MAX_OUTPUT]
 
 
 def run_command(root, node, command, read, store):

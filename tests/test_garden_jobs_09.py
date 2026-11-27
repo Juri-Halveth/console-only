@@ -13,6 +13,7 @@ import unittest
 SRC = Path(__file__).resolve().parents[1] / 'src'
 if not (SRC / 'garden_jobs.py').exists():
     SRC = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SRC))
 spec = importlib.util.spec_from_file_location('garden_jobs', SRC / 'garden_jobs.py')
 jobs = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(jobs)
