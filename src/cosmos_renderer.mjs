@@ -29,6 +29,8 @@ uniform vec3 u_axis;
 uniform vec3 u_lensAxis;
 uniform float u_lensRadius;
 uniform float u_focusDistance;
+uniform vec3 u_skyAxis;
+uniform vec2 u_skyWarp;
 ${OPTICS_GLSL}
 float hash3(vec3 p){
   p=fract(p*.1031);p+=dot(p,p.yzx+33.33);
@@ -52,7 +54,8 @@ void main(){
     (1.0-gl_FragCoord.y/u_resolution.y)*u_css.y);
   float focal=min(u_css.x*.94,u_css.y*1.03)*u_lens;
   vec3 observed=soUnit(vec3((px.x-u_css.x*.5)/focal,(u_css.y*.5-px.y)/focal,1.0));
-  vec3 lensed=soLensInverse(observed,u_lensAxis,u_lensRadius);
+  vec3 unbent=soSkyImage(observed,u_skyAxis,vec2(u_skyWarp.x,-u_skyWarp.y)).xyz;
+  vec3 lensed=soLensInverse(unbent,u_lensAxis,u_lensRadius);
   vec3 ray=soUnit(soCameraToWorld(soInverseDirection(lensed,u_beta,u_axis),u_angles));
   // A celestial band occupies a fixed direction on the unit sphere. Its 3-D
   // noise is continuous across all longitudes: no atan seam, no tunnel wall.
@@ -66,7 +69,9 @@ void main(){
   float light=band*(.013+.072*pow(dust,2.0)+.032*fine);
   light*=1.0-lane*(.45+.42*smoothstep(.22,.73,fine));
   vec3 tint=mix(vec3(.55,.65,.84),vec3(1.0,.84,.64),smoothstep(.3,.75,dust));
-  vec3 col=vec3(.00065,.0010,.0018)+tint*light+vec3(.006,.009,.016)*broad;
+  // Keep the dust lane legible as the same band wraps around the observer.
+  float bandExposure=1.0+1.1*smoothstep(0.0,2.0,u_skyWarp.y);
+  vec3 col=vec3(.00065,.0010,.0018)+(tint*light+vec3(.006,.009,.016)*broad)*bandExposure;
   // Compact distant galaxies. They are angular sky sources, not foreground
   // density samples, and remain anchored while looking around or braking.
   vec3 g=normalize(vec3(-.48,.20,.85));
@@ -100,6 +105,8 @@ uniform vec3 u_lensAxis;
 uniform float u_lensRadius;
 uniform float u_focusDistance;
 uniform float u_imageBranch;
+uniform vec3 u_skyAxis;
+uniform vec2 u_skyWarp;
 out vec3 v_color;
 out float v_size;
 ${OPTICS_GLSL}
@@ -110,7 +117,8 @@ void main(){
   vec3 aberrated=soForwardDirection(direction,u_beta,u_axis);
   float effectiveLens=soLensRadiusAtDistance(distance,u_lensRadius,u_focusDistance);
   if(u_imageBranch>.5&&effectiveLens<=0.0){gl_Position=vec4(2.,2.,2.,1.);gl_PointSize=1.;v_color=vec3(0.);v_size=1.;return;}
-  vec3 apparent=soLensImage(aberrated,u_lensAxis,effectiveLens,u_imageBranch);
+  vec4 image=soSkyImage(soLensImage(aberrated,u_lensAxis,effectiveLens,u_imageBranch),u_skyAxis,u_skyWarp);
+  vec3 apparent=image.xyz;
   float focal=min(u_css.x*.94,u_css.y*1.03)*u_lens;
   float nearFade=smoothstep(1.8,7.0,distance);
   float farFade=1.0-smoothstep(310.0,${LOCAL_FADE_END.toFixed(1)},distance);
@@ -121,8 +129,21 @@ void main(){
   float energy=clamp(pow(d,.48),.28,2.3);
   float size=a_size*mix(1.0,clamp(72.0/max(distance,1.0),.35,2.8),a_local);
   size*=clamp(sqrt(d),.7,1.65);
-  v_color=a_color*opacity*energy;
-  v_size=clamp(size,1.0,7.0)*u_resolution.y/u_css.y;
+  // Direction and apparent brightness are separate. In the near field many
+  // faint secondary images share a pixel; assigning all of them full source
+  // flux saturates the framebuffer. Use the thin-lens area of this branch.
+  float intensity=1.0;
+  if(u_imageBranch>.5 && u_skyWarp.y>0.0){
+    float separation=atan(length(cross(aberrated,u_lensAxis)),dot(aberrated,u_lensAxis));
+    float u=min(1000.0,separation/max(effectiveLens,1e-7));
+    float root=u*sqrt(u*u+4.0);
+    float secondaryArea=min(1.0,2.0/max(1e-8,root*(u*u+2.0+root)));
+    intensity=mix(1.0,secondaryArea,smoothstep(0.0,0.75,u_skyWarp.y));
+  }
+  v_color=a_color*opacity*energy*intensity;
+  // Stars are unresolved samples. The PSF is screen-sized even when their
+  // apparent positions traverse large angles; conserve their compact cores.
+  v_size=clamp(size,1.0,7.0)*min(image.w,1.45)*u_resolution.y/u_css.y;
   gl_PointSize=max(1.0,v_size*3.0);
   if(apparent.z<.0001||opacity<.001){gl_Position=vec4(2.0,2.0,2.0,1.0);return;}
   vec2 xy=apparent.xy/apparent.z*focal;
@@ -243,7 +264,7 @@ export function createCosmosRenderer(canvas,{seed=0x4b4f5252}={}){
     };
     const far=makeStarBuffer(createStarGeometry(seed));
     let local=createLocalStars({x:0,y:0,z:0},seed),near=makeStarBuffer(local.data);
-    const names=['u_resolution','u_css','u_angles','u_lens','u_beta','u_axis','u_camera','u_velocity','u_lensAxis','u_lensRadius','u_focusDistance','u_imageBranch'];
+    const names=['u_resolution','u_css','u_angles','u_lens','u_beta','u_axis','u_camera','u_velocity','u_lensAxis','u_lensRadius','u_focusDistance','u_imageBranch','u_skyAxis','u_skyWarp'];
     const locations=programs.map(p=>Object.fromEntries(names.map(n=>[n,gl.getUniformLocation(p,n)])));
     const onLost=event=>{event.preventDefault();lost=true;};
     const onRestored=()=>{lost=true;}; // caller replaces this renderer after restoration
@@ -269,6 +290,8 @@ export function createCosmosRenderer(canvas,{seed=0x4b4f5252}={}){
           gl.uniform3f(U.u_angles,camera.yaw,camera.pitch,camera.roll);gl.uniform1f(U.u_lens,lens);
           gl.uniform1f(U.u_beta,state.beta);gl.uniform3f(U.u_axis,...state.axis);
           if(U.u_lensAxis!==null)gl.uniform3f(U.u_lensAxis,...state.lensAxis);
+          gl.uniform3f(U.u_skyAxis,...state.skyAxis);
+          gl.uniform2f(U.u_skyWarp,...state.skyWarp);
           if(U.u_lensRadius!==null)gl.uniform1f(U.u_lensRadius,state.lensRadius);
           if(U.u_focusDistance!==null)gl.uniform1f(U.u_focusDistance,Number.isFinite(state.focusDistance)?state.focusDistance:1e12);
           if(U.u_camera!==null)gl.uniform3f(U.u_camera,camera.x-local.origin[0],camera.y-local.origin[1],camera.z-local.origin[2]);

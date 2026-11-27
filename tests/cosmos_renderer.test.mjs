@@ -208,7 +208,7 @@ test('invalid frame inputs neither draw nor send nonfinite values to WebGL',()=>
 test('sky and stars receive one camera/optics state, with floating-origin local positions',()=>{
   const q=recordingCanvas(),renderer=createCosmosRenderer(q.canvas);
   const camera={x:123.25,y:-202.5,z:314.75,yaw:0.2,pitch:-0.1,roll:0.3};
-  const optics={beta:0.72,axis:[3,-4,0]},state=createOpticsState(optics);
+  const optics={beta:0.72,axis:[3,-4,0],skyAxis:[0,2,3],skyBend:1.1},state=createOpticsState(optics);
   assert.equal(renderer.render(camera,1200,700,0.9,1,optics),true);
   assert.equal(q.draws.length,3);
   assert.equal(q.draws[0].mode,q.gl.TRIANGLES);
@@ -222,6 +222,8 @@ test('sky and stars receive one camera/optics state, with floating-origin local 
     assert.deepEqual(draw.uniforms.u_beta,[state.beta],
       'inverse sky lookup performs its own sign reversal; do not negate its uniform');
     assert.deepEqual(draw.uniforms.u_axis,state.axis);
+    assert.deepEqual(draw.uniforms.u_skyAxis,state.skyAxis);
+    assert.deepEqual(draw.uniforms.u_skyWarp,state.skyWarp);
   }
   assert.deepEqual(q.draws[2].uniforms.u_camera,[27.25,85.5,26.75]);
   assert.equal(q.draws[1].data[7],0);

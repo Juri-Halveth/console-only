@@ -228,7 +228,7 @@ def serve(root, read, store, open_browser=True):
     state(root, read, store)
     page = (Path(__file__).parent / 'garden_live.html').read_bytes()
     script = (Path(__file__).parent / 'garden_live.js').read_bytes()
-    static_model_paths = {'/'+name: Path(__file__).parent/name for name in ('gg24-funding.mjs','simulation_models.mjs','particle-dynamics.js','reference-physics.js','models.js','material-engine.js','material-model.js','material-view.js','doppelacht-source.js','doppelacht.js','doppelacht-view.js')}
+    static_model_paths = {'/'+name: Path(__file__).parent/name for name in ('gg24-funding.mjs','horizon_space.mjs','simulation_models.mjs','particle-dynamics.js','reference-physics.js','models.js','material-engine.js','material-model.js','material-view.js','doppelacht-source.js','doppelacht.js','doppelacht-view.js')}
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             if self.path.split('?', 1)[0] == '/':

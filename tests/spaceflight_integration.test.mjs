@@ -80,7 +80,13 @@ async function runtime({search='',instrument=false}={}) {
       imports.push(promise);
       return promise;
     }});
-  await Promise.all(imports);
+  // Dynamic imports can enqueue the next renderer dependency. Wait for
+  // the complete loader before using the synchronous animation driver.
+  for (let start=0;start<imports.length;) {
+    const batch=imports.slice(start);start+=batch.length;
+    await Promise.all(batch);
+    await new Promise(resolve=>setImmediate(resolve));
+  }
   // Settle module `.then()` loaders and two awaited stages of the state poll.
   for(let i=0;i<6;i++) await Promise.resolve();
   const probe=window.__korridotProbe;
@@ -183,8 +189,9 @@ test('shell view shortcuts preserve optical distance while navigation exits it',
   assert.equal(r.probe.material().view.distance,undefined,'forward navigation must exit point view');
 });
 
-test('W+Shift passes the old 240-unit end without teleporting back',async()=>{
-  const r=await runtime();r.key('w');r.key('Shift');
+test('off-axis W+Shift passes the old 240-unit end without teleporting back',async()=>{
+  const r=await runtime();r.key('d');r.advance(1.5);r.key('d','keyup');
+  r.key('w');r.key('Shift');
   let previous=r.probe.snapshot().z,maximum=previous;
   r.advance(12,60,(_,snapshot)=>{
     assert.ok(snapshot.z>=previous-1e-7,`Forward flight reversed or wrapped: ${previous} -> ${snapshot.z}`);
@@ -192,6 +199,25 @@ test('W+Shift passes the old 240-unit end without teleporting back',async()=>{
   });
   assert.ok(maximum>300,`Flight did not pass old travel boundary: ${maximum}`);
   r.key('w','keyup');r.key('Shift','keyup');r.unchanged();
+});
+
+test('the Horizon button lines up a real inward crossing, a rear view keeps the optics, Home exits',async()=>{
+  const r=await runtime();
+  r.get('horizon').onclick();r.advance(2);
+  r.key('w');r.advance(3);
+  const entered=r.finite();
+  assert.ok(BigInt(entered.interior.shell)>1n);
+  r.key('w','keyup');r.key('x');r.advance(1.5);r.key('x','keyup');
+  const atRest=r.finite();
+  r.key('ArrowRight');r.advance(3);r.key('ArrowRight','keyup');
+  const back=r.finite();
+  assert.ok(back.camera.yaw>Math.PI/2);
+  assert.equal(back.interior.shell,atRest.interior.shell);
+  assert.ok(back.skyBend>=2.4);
+  assert.ok(r.probe.route().lensRadius>0);
+  r.key('Home');r.step();
+  assert.equal(r.finite().interior,null);
+  assert.equal(r.finite().camera.z,0);
 });
 
 test('D/E translation passes old ±7.2/±6 tube limits',async()=>{
