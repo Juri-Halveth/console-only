@@ -13,6 +13,14 @@ spec.loader.exec_module(garden)
 
 
 class GardenTests(unittest.TestCase):
+    def test_help_on_redirected_windows_output(self):
+        buffer = io.BytesIO()
+        with io.TextIOWrapper(buffer, encoding='cp1252', write_through=True) as output:
+            with contextlib.redirect_stdout(output), self.assertRaises(SystemExit) as exit_status:
+                garden.main(['--help'])
+            self.assertEqual(exit_status.exception.code, 0)
+            self.assertIn('Äste', buffer.getvalue().decode('cp1252'))
+
     def test_seed_branches_rebuild_and_render_deterministically(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

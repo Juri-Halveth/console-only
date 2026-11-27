@@ -337,7 +337,7 @@ small{{font:12px/1.7 ui-monospace,monospace;color:#9cbbb0;overflow-wrap:anywhere
 
 
 def main(argv=None, root=None):
-    parser = argparse.ArgumentParser(prog='./garden', description='Lokales Konsolenexperiment: Keim → Äste → sichtbare Welt')
+    parser = argparse.ArgumentParser(prog='./garden', description='Aus einem Keim wachsen Äste, die im Garten sichtbar werden.')
     sub = parser.add_subparsers(dest='action', required=True)
     sub.add_parser('init')
     p = sub.add_parser('seed'); p.add_argument('name')
